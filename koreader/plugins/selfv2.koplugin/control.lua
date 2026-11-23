@@ -102,6 +102,40 @@ function Canvas:tile(x, y, w, h, title, sub, on, cb)
     self:zone({ x, y, w, h }, cb)
 end
 
+-- Rotate the book you're reading. self.v2's own screens are laid out upright, so they stay portrait.
+function Canvas:rotateMenu()
+    local ui = self.plugin and self.plugin.ui
+    if not (self.overlay and ui and ui.document) then
+        UIManager:show(InfoMessage:new{ text = _("Rotate works inside a book or paper. Home and your dashboard stay upright."), timeout = 3 })
+        return
+    end
+    local ButtonDialog = require("ui/widget/buttondialog")
+    local Screen = Device.screen
+    local cur = Screen:getRotationMode()
+    local dlg
+    local function set(mode)
+        UIManager:close(dlg)
+        self.is_open = false
+        UIManager:close(self)
+        if mode == cur then return end
+        UIManager:nextTick(function()
+            ui:handleEvent(require("ui/event"):new("SetRotationMode", mode))
+            -- the Back / Home buttons and the handle are placed for the screen size: lay them out again
+            UIManager:nextTick(function() if self.plugin.addReaderButtons then self.plugin:addReaderButtons() end end)
+        end)
+    end
+    local function opt(label, mode) return { text = label .. (cur == mode and "  ✓" or ""), callback = function() set(mode) end } end
+    dlg = ButtonDialog:new{
+        title = _("Rotate this book"),
+        buttons = {
+            { opt(_("Portrait"), 0), opt(_("Upside down"), 2) },
+            { opt(_("Landscape ↻"), 1), opt(_("Landscape ↺"), 3) },
+            { { text = _("Close"), callback = function() UIManager:close(dlg) end } },
+        },
+    }
+    UIManager:show(dlg)
+end
+
 function Canvas:drawControl()
     -- tapping below the panel closes it; the panel itself swallows stray taps
     self:zone({ 0, PANEL_H, 758, 1024 - PANEL_H }, function() self:closeControl() end)
@@ -247,14 +281,17 @@ function Canvas:drawControl()
         end)
     end
 
-    -- restart, blackhole
-    local by, bw = 630, 339
-    self:pill("Restart KOReader", 30, by, 52, "outline", 17, bw)
-    self:zone({ 30, by, bw, 52 }, function()
+    -- rotate, restart, blackhole
+    local by, bw = 630, (698 - 24) / 3
+    local bx = function(i) return 30 + (i - 1) * (bw + 12) end
+    self:pill("Rotate", bx(1), by, 52, "outline", 17, bw)
+    self:zone({ bx(1), by, bw, 52 }, function() self:rotateMenu() end)
+    self:pill("Restart", bx(2), by, 52, "outline", 17, bw)
+    self:zone({ bx(2), by, bw, 52 }, function()
         if UIManager.restartKOReader then UIManager:restartKOReader() end
     end)
-    self:pill("Blackhole", 389, by, 52, "dark", 17, bw)
-    self:zone({ 389, by, bw, 52 }, function()
+    self:pill("Blackhole", bx(3), by, 52, "dark", 17, bw)
+    self:zone({ bx(3), by, bw, 52 }, function()
         UIManager:show(ConfirmBox:new{
             text = _("Blackhole: close KOReader and go back to the Kindle's own home screen?"),
             ok_text = _("Exit"),

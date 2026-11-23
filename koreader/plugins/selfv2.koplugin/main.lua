@@ -1055,6 +1055,12 @@ end
 
 function SelfV2:showHome()
     if self.canvas and self.canvas.is_open then return end
+    -- Home is laid out upright: come back to portrait if a book was rotated
+    local okr, rot = pcall(Screen.getRotationMode, Screen)
+    if okr and rot and rot ~= 0 then
+        pcall(Screen.setRotationMode, Screen, 0)
+        UIManager:setDirty("all", "full")
+    end
     local ok, c = pcall(Canvas.new, Canvas, { plugin = self, mode = "home" })
     if not ok then
         logger.err("selfv2: could not build Home", c)
