@@ -18,6 +18,7 @@ N.DS = {
     todos    = "3433145a-d537-40d4-92e9-3f9b1a53602a",
     attend   = "42126113-480c-813c-8b0e-000b63a190dd",
     lectures = "42126113-480c-818e-80fc-000beaf9718f",
+    sleep    = "f23d3475-5992-46c1-8484-34d3aa17724a",
 }
 
 function N.token()
@@ -135,7 +136,7 @@ end
 ---------------------------------------------------------------- dates and times
 
 N.today = function() return os.date("%Y-%m-%d") end
-N.dayTitle = function(t) return (os.date("%a, %d %b", t):gsub(" 0", " ")) end
+N.dayTitle = function(date) return (os.date("%a, %d %b", date and N.dateTime(date) or nil):gsub(" 0", " ")) end
 
 local function days_from_civil(y, m, d)
     y = (m <= 2) and (y - 1) or y
@@ -180,6 +181,17 @@ end
 -- local "HH:MM" today → ISO with the India offset
 function N.isoAt(date, hhmm)
     return string.format("%sT%s:00+05:30", date, hhmm)
+end
+
+function N.prevDay(date)
+    local y, m, d = date:match("(%d+)-(%d+)-(%d+)")
+    local t = os.time{ year = tonumber(y), month = tonumber(m), day = tonumber(d) - 1, hour = 12 }
+    return os.date("%Y-%m-%d", t)
+end
+
+function N.dateTime(date)
+    local y, m, d = date:match("(%d+)-(%d+)-(%d+)")
+    return os.time{ year = tonumber(y), month = tonumber(m), day = tonumber(d), hour = 12 }
 end
 
 function N.nextDay(date)

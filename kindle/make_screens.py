@@ -127,18 +127,19 @@ L = {
         "rows_y": 812, "row_h": 62, "rows": 3,
     },
     "today": {
-        "back": (PAD, 20, 116, 40), "sub": (PAD, 128), "tabs_y": 164,
-        "now": (PAD, 218, 698, 120),
-        "blocks": (PAD, 352, 698, 404), "blk_prev": (586, 362, 56, 38), "blk_next": (652, 362, 56, 38),
-        "blk_y": 414, "blk_h": 56, "blk_rows": 6,
-        "todos": (PAD, 770, 698, 232), "todo_add": (588, 780, 120, 38), "todo_y": 830, "todo_h": 54, "todo_rows": 3,
+        "label": (PAD, 20), "chips_y": 96, "focus": (432, 20, 168, 40), "date": (610, 20, 118, 40),
+        "nav": (PAD, 140, 698, 56), "tab_y": 145, "tab_h": 46,
+        "left": (PAD, 210, 408, 792), "up": (322, 224, 44, 40), "down": (374, 224, 44, 40),
+        "grid_top": 292, "grid_x": 94, "grid_r": 426, "px": 46, "hours": 14, "hint_y": 950,
+        "now": (450, 210, 278, 206),
+        "todos": (450, 428, 278, 574), "todo_y": 482, "todo_h": 52, "todo_rows": 8, "todo_add": (468, 938, 242, 46),
     },
     "checkin": {
-        "back": (PAD, 20, 116, 40), "sub": (PAD, 128), "tabs_y": 164,
-        "college": (PAD, 218, 341, 254), "work": (387, 218, 341, 254),
-        "lectures": (PAD, 486, 698, 158),
-        "habits": (PAD, 658, 698, 200),
-        "dials": (PAD, 872, 698, 130),
+        "date": (PAD, 16, 168, 40), "nav": (PAD, 150, 698, 56), "tab_y": 155, "tab_h": 46,
+        "cw": (PAD, 218, 698, 292), "college_y": 272, "lect_label_y": 338, "lect_y": 360, "work_y": 438,
+        "supp": (PAD, 524, 698, 226), "supp_y": 572, "mind_y": 632, "period": (578, 626, 128, 42), "mood_y": 680,
+        "tea": (PAD, 764, 342, 150), "sleep": (386, 764, 342, 150),
+        "save": (PAD, 930, 698, 54),
     },
     "subs": {
         "back": (PAD, 20, 116, 40), "sub": (PAD, 128),
@@ -288,28 +289,33 @@ def bake_library():
     save(im, "library.png")
 
 
+def nav_bar(im, rect):
+    card(im, rect, 200, rect[3] // 2)
+
+
 def bake_today():
     im = page()
     l = L["today"]
     d = ImageDraw.Draw(im)
-    back_pill(d)
-    d.text((PAD, 74), "Today", font=f(MARC, 42), fill=INK(17))
-    folder(im, "f_zebra.png", W - PAD - 124, 18, 112)
-    textured(im, l["now"], "zebra_s.jpg", 0.5, 26)
+    d.text((PAD, 40), "Rajeshwari", font=f(MARC, 44), fill=INK(17))
+    nav_bar(im, l["nav"])
+    card(im, l["left"], 215)
+    textured(im, l["now"], "zebra_s.jpg", 0.42, 26)
+    card(im, l["todos"], 215)
     d = ImageDraw.Draw(im)
-    x, y, w, h = l["now"]
-    d.text((x + 20, y + 16), "NOW", font=f(SANS, 13, 700), fill=(235, 235, 235, 255))
-    card(im, l["blocks"], 230)
-    card(im, l["todos"], 230)
-    d = ImageDraw.Draw(im)
-    d.text((52, l["blocks"][1] + 14), "Time blocks", font=f(MARC, 26), fill=INK(17))
-    d.text((52, l["todos"][1] + 14), "To-dos", font=f(MARC, 26), fill=INK(17))
-    for n in range(l["blk_rows"] - 1):
-        yy = l["blk_y"] + (n + 1) * l["blk_h"] - 6
-        d.line((52, yy, 706, yy), fill=INK(225), width=1)
-    for n in range(l["todo_rows"] - 1):
-        yy = l["todo_y"] + (n + 1) * l["todo_h"] - 6
-        d.line((52, yy, 706, yy), fill=INK(225), width=1)
+    x, y, w, h = l["left"]
+    d.text((x + 16, y + 12), "Time blocks", font=f(MARC, 24), fill=INK(17))
+    d.text((x + 16, y + 44), "12 am – 11:59 pm", font=f(SANS, 13), fill=INK(85))
+    for i in range(l["hours"] + 1):
+        yy = l["grid_top"] + i * l["px"]
+        d.line((l["grid_x"], yy, l["grid_r"], yy), fill=INK(220), width=1)
+    d.text((x + 16, l["hint_y"]), "Arrows for earlier or later hours · tap an empty hour to add", font=f(SANS, 12), fill=INK(85))
+    d.text((x + 16, l["hint_y"] + 18), "tap a block to edit", font=f(SANS, 12), fill=INK(85))
+    x, y, w, h = l["todos"]
+    d.text((x + 18, y + 14), "To-dos", font=f(MARC, 24), fill=INK(17))
+    ax, ay, aw, ah = l["todo_add"]
+    d.rounded_rectangle((ax, ay, ax + aw, ay + ah), radius=ah // 2, outline=INK(17), width=3, fill=INK(255))
+    d.text((ax + aw / 2, ay + ah / 2), "+ Add to-do", font=f(SANS, 16, 700), fill=INK(17), anchor="mm")
     save(im, "today.png")
 
 
@@ -317,20 +323,31 @@ def bake_checkin():
     im = page()
     l = L["checkin"]
     d = ImageDraw.Draw(im)
-    back_pill(d)
-    d.text((PAD, 74), "Check-in", font=f(MARC, 42), fill=INK(17))
-    folder(im, "f_blackcow.png", W - PAD - 124, 18, 112)
-    textured(im, l["college"], "cow_s.jpg", 0.48, 26)
-    textured(im, l["work"], "fawn_s.jpg", 0.48, 26)
+    d.text((PAD, 70), "Check-in", font=f(MARC, 42), fill=INK(17))
+    d.text((PAD, 122), "How are you today?", font=f(SANS, 16), fill=INK(68))
+    nav_bar(im, l["nav"])
+    textured(im, l["cw"], "cow_s.jpg", 0.42, 26)
     d = ImageDraw.Draw(im)
-    for key, label in [("college", "College"), ("work", "Work")]:
-        x, y, w, h = l[key]
-        d.text((x + 18, y + 14), label, font=f(MARC, 28), fill=(255, 255, 255, 255))
-    for key, label in [("lectures", "Lectures today"), ("habits", "Habits"), ("dials", "")]:
-        card(im, l[key], 230)
+    x, y, w, h = l["cw"]
+    d.text((x + 22, y + 14), "College & work", font=f(MARC, 24), fill=(255, 255, 255, 255))
+    d.text((x + w - 22, y + 26), "Also updates your time blocks on Today", font=f(SANS, 13), fill=(215, 215, 215, 255), anchor="rm")
+    d.text((x + 22, l["college_y"] + 14), "College", font=f(SANS, 18, 700), fill=(255, 255, 255, 255))
+    d.text((x + 22, l["work_y"] + 14), "Work", font=f(SANS, 18, 700), fill=(255, 255, 255, 255))
+    d.text((x + 22, l["lect_label_y"]), "TODAY'S LECTURES · TAP TO MARK SKIPPED", font=f(SANS, 12, 700), fill=(215, 215, 215, 255))
+    card(im, l["supp"], 215)
+    d = ImageDraw.Draw(im)
+    d.text((52, l["supp"][1] + 12), "Supplements", font=f(MARC, 23), fill=INK(17))
+    d.text((52, l["mind_y"]), "How's the mind?", font=f(MARC, 23), fill=INK(17))
+    for key, title, sub in [("tea", "Herbal tea", "of 2 cups"), ("sleep", "Sleep", "hours · goal 8")]:
+        card(im, l[key], 215)
         d = ImageDraw.Draw(im)
-        if label:
-            d.text((52, l[key][1] + 12), label, font=f(MARC, 24), fill=INK(17))
+        x, y, w, h = l[key]
+        d.ellipse((x + 18, y + 40, x + 88, y + 110), outline=INK(205), width=7)
+        d.text((x + 108, y + 26), title, font=f(MARC, 21), fill=INK(17))
+        d.text((x + 108, y + 56), sub, font=f(SANS, 14), fill=INK(85))
+    x, y, w, h = l["save"]
+    d.rounded_rectangle((x, y, x + w, y + h), radius=h // 2, fill=INK(17, 235))
+    d.text((x + w / 2, y + h / 2), "Save check-in", font=f(SANS, 19, 700), fill=INK(255) if not NIGHT else (17, 17, 17, 255), anchor="mm")
     save(im, "checkin.png")
 
 
