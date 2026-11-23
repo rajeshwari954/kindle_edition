@@ -601,10 +601,19 @@ function SelfV2:settingsDialog(canvas)
     dlg = ButtonDialog:new{
         title = _("Settings"),
         buttons = {
+            item(_("KOReader menu · tools & settings"), function()
+                -- the full KOReader menu (tools, settings, network, fonts…) on top of Home
+                local menu = self.ui and self.ui.menu
+                if menu and menu.onShowMenu then menu:onShowMenu() end
+            end),
             item(_("Open files"), function() canvas:close() end),
+            item(_("Wi-Fi on / off"), function() self:toggleWifi() end),
             item(_("Check for updates"), function() self:checkUpdates() end),
             item(G_reader_settings:nilOrTrue("selfv2_home_after_book") and _("Show Home after closing a book: on") or _("Show Home after closing a book: off"),
                 function() G_reader_settings:flipNilOrTrue("selfv2_home_after_book") end),
+            item(_("Restart KOReader"), function()
+                if UIManager.restartKOReader then UIManager:restartKOReader() end
+            end),
             item(_("Close"), function() end),
         },
     }
