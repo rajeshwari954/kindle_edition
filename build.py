@@ -533,6 +533,30 @@ def main():
             print(f"  no new posts from {len(feeds)} Substacks")
     manifest["substack_following"] = following  # shown on the Kindle's Substacks page
 
+    # newspaper PDFs you email in today are print editions (Daily reads, cleared weekly)
+    PRINT = [("The Times of India", (" times of india ", " timesofindia ", " toi ")), ("The Hindu", (" hindu ", " thehindu ")),
+             ("The Economic Times", (" economic times ", " economictimes ", " et ")), ("LiveLaw", (" livelaw ", " live law "))]
+    today_ist = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=5, minutes=30)).date()
+    kept = []
+    for b in books:
+        paper = None
+        if b["name"].lower().endswith(".pdf"):
+            norm = " " + re.sub(r"[^a-z0-9]+", " ", (b["name"][:-4] + " " + b.get("subject", "")).lower()) + " "
+            paper = next((n for n, pats in PRINT if any(p in norm for p in pats)), None)
+        if not paper:
+            kept.append(b)
+            continue
+        when = b.get("when")
+        if when and (when + dt.timedelta(hours=5, minutes=30)).date() != today_ist:
+            continue  # an older day's paper: skip
+        fname = f"{today_ist.isoformat()} {paper} (print).pdf"
+        pdir = out / "print"
+        pdir.mkdir(parents=True, exist_ok=True)
+        (pdir / fname).write_bytes(b["data"])
+        manifest["files"].append({"id": "print:" + paper, "kind": "print", "name": paper, "file": fname, "url": "print/" + fname})
+        print(f"  print edition: {paper}")
+    books = kept
+
     # books from the inbox go to the Books folder on the Kindle (kept, never cleared)
     if books:
         print(f"• Books: {len(books)}")

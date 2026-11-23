@@ -2,6 +2,8 @@
 
 - Substack newsletters become posts for the Substack digest.
 - EPUB / PDF attachments become books, delivered to the Books folder on the Kindle and never cleared.
+- A PDF named after one of the four papers (sent today) is a print edition instead: it goes to
+  Daily reads as "YYYY-MM-DD <Paper> (print).pdf" and is cleared with the rest of the week.
 
 Needs two repository secrets: GMAIL_USER (the inbox address) and GMAIL_APP_PASSWORD.
 Without them this quietly does nothing.
@@ -105,7 +107,7 @@ def read_inbox(since: dt.datetime, areas_by_sub: dict, names_by_sub: dict):
                     data = part.get_payload(decode=True)
                     if data:
                         books.append({"name": re.sub(r'[\\/:*?"<>|]+', "-", fname), "data": data, "when": when,
-                                      "from": parseaddr(msg.get("From", ""))[1]})
+                                      "from": parseaddr(msg.get("From", ""))[1], "subject": subject})
     finally:
         try:
             box.logout()

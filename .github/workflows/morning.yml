@@ -3,6 +3,7 @@ name: Morning edition
 on:
   schedule:
     - cron: "23 0 * * *"   # 05:53 IST every day
+    - cron: "17 3 * * *"   # 08:47 IST: picks up newspaper PDFs emailed in after the first run
   workflow_dispatch: {}     # "Run workflow" button for a manual build
 
 permissions:

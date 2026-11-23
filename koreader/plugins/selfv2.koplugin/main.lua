@@ -454,21 +454,68 @@ end
 
 ---------------------------------------------------------------- papers
 
+-- Print editions: newspaper PDFs you send to the Kindle yourself (Send to Kindle email, the Gmail inbox, or USB).
+-- Any PDF from today whose name mentions one of the four papers is moved into Daily reads as
+-- "YYYY-MM-DD <Paper> (print).pdf", so the Sunday cleanup clears it with the rest of the week.
+local PRINT = {
+    { id = "toi", name = "The Times of India", pats = { " times of india ", " timesofindia ", " toi " } },
+    { id = "hindu", name = "The Hindu", pats = { " hindu ", " thehindu " } },
+    { id = "et", name = "The Economic Times", pats = { " economic times ", " economictimes ", " et " } },
+    { id = "livelaw", name = "LiveLaw", pats = { " livelaw ", " live law " } },
+}
+local function printEditions()
+    local today = os.date("%Y-%m-%d")
+    local found = {}
+    if lfs.attributes(FOLDER, "mode") ~= "directory" then lfs.mkdir(FOLDER) end
+    for _i, dir in ipairs({ "/mnt/us/documents", FOLDER }) do
+        local ok, iter, obj = pcall(lfs.dir, dir)
+        if ok then
+            for f in iter, obj do
+                local path = dir .. "/" .. f
+                if f:lower():match("%.pdf$") and lfs.attributes(path, "mode") == "file" then
+                    local stamped = f:match("^(%d%d%d%d%-%d%d%-%d%d) .*%(print%)%.pdf$")
+                    local fresh = stamped == today or (not stamped and os.date("%Y-%m-%d", lfs.attributes(path, "modification") or 0) == today)
+                    if fresh then
+                        local norm = " " .. f:lower():gsub("%.pdf$", ""):gsub("[^%w]+", " ") .. " "
+                        for _j, p in ipairs(PRINT) do
+                            local hit = false
+                            for _k, pat in ipairs(p.pats) do if norm:find(pat, 1, true) then hit = true end end
+                            if hit and not found[p.id] then
+                                local dest = FOLDER .. "/" .. today .. " " .. p.name .. " (print).pdf"
+                                if path ~= dest then
+                                    if exists(dest) then os.remove(path) else os.rename(path, dest) end
+                                end
+                                found[p.id] = dest
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return found
+end
+
 function Canvas:buildPapers()
     local L = self.L.papers
     local papers = self:isToday() and self:files("paper") or {}
+    local prints = printEditions()
+    local nprint = 0
+    for _k in pairs(prints) do nprint = nprint + 1 end
     local st = readState()
     local date = self.manifest and self.manifest.date or ""
     local nread = 0
     for _i, f in ipairs(papers) do if st[date .. "/" .. f.id] then nread = nread + 1 end end
     self:zone(L.back, function() self:go("home") end)
 
-    if #papers == 0 then
+    if #papers == 0 and nprint == 0 then
         self:text("Not downloaded yet · tap Download on Home", "sans", 16, L.sub[1], L.sub[2], GREY)
         self:lines("Today's papers arrive after 6 am. Go back to Home and tap Download today's reads.", "sans", 17, 52, L.rows_y, 600, 3, GREY, 26)
         return
     end
-    self:text(todayLabel() .. " · " .. nread .. " of " .. #papers .. " read", "sans", 16, L.sub[1], L.sub[2], GREY)
+    self:text(todayLabel() .. " · " .. nread .. " of " .. #papers .. " read"
+        .. (nprint > 0 and (" · " .. nprint .. " print edition" .. (nprint > 1 and "s" or "")) or ""), "sans", 16, L.sub[1], L.sub[2], GREY)
 
     -- tiles are baked in a fixed order; match manifest entries to them by id
     local order = { "toi", "hindu", "et", "livelaw" }
@@ -476,24 +523,46 @@ function Canvas:buildPapers()
     for _i, f in ipairs(papers) do byId[f.id] = f end
     if not self.sel then
         for _i, id in ipairs(order) do
-            if byId[id] and not st[date .. "/" .. id] then self.sel = id break end
+            if (byId[id] or prints[id]) and not st[date .. "/" .. id] then self.sel = id break end
         end
         self.sel = self.sel or order[1]
     end
     for i, id in ipairs(order) do
         local r, f = L.tiles[i], byId[id]
+        local tagx = r[1] + 16
         if f then
-            self:pill((f.count or 0) .. " stories", r[1] + 16, r[2] + 14, 28, "light", 12)
+            tagx = tagx + self:pill((f.count or 0) .. " stories", r[1] + 16, r[2] + 14, 28, "light", 12) + 8
             if st[date .. "/" .. id] then self:pill("Read", r[1] + r[3] - 86, r[2] + 14, 28, "dark", 12, 70) end
-        else
+        elseif not prints[id] then
             self:pill("Not in today's set", r[1] + 16, r[2] + 14, 28, "light", 12)
+        end
+        if prints[id] then
+            self:pill("Print edition", tagx, r[2] + 14, 28, "light", 12)
         end
         if self.sel == id then self:outline(r, 24) end
         self:zone(r, function() self.sel = id; self:rebuild("ui") end)
     end
 
     local f = byId[self.sel]
-    if not f then return end
+    local pdf = prints[self.sel]
+    if pdf then
+        local bx = f and (L.btn_read[1] - 8 - 140) or L.btn_open[1] - 16
+        self:pill("Print edition", bx, L.btn_open[2], L.btn_open[4], f and "outline" or "dark", 14, 140)
+        self:zone({ bx, L.btn_open[2], 140, L.btn_open[4] }, function()
+            if exists(pdf) then
+                setRead(date .. "/" .. self.sel, true)
+                self:close(); openBook(pdf)
+            end
+        end)
+    end
+    if not f then
+        if pdf then
+            self:text("Today's print edition", "sans", 14, L.panel_sub[1], L.panel_sub[2], GREY)
+            self:lines("This paper's summary isn't in today's set, but the print edition you sent is here. Tap Print edition to read it.",
+                "sans", 17, 52, L.rows_y, 640, 3, GREY, 26)
+        end
+        return
+    end
     local path = FOLDER .. "/" .. f.file
     self:text("The top 5 from " .. f.name, "sans", 14, L.panel_sub[1], L.panel_sub[2], GREY)
     local key = date .. "/" .. f.id
