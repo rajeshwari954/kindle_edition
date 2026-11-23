@@ -535,7 +535,7 @@ def main():
 
     # newspaper PDFs you email in today are print editions (Daily reads, cleared weekly)
     PRINT = [("The Times of India", (" times of india ", " timesofindia ", " toi ")), ("The Hindu", (" hindu ", " thehindu ")),
-             ("The Economic Times", (" economic times ", " economictimes ", " et ")), ("LiveLaw", (" livelaw ", " live law "))]
+             ("The Economic Times", (" economic times ", " economictimes ", " et "))]
     today_ist = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=5, minutes=30)).date()
     kept = []
     for b in books:

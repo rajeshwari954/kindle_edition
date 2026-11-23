@@ -455,13 +455,12 @@ end
 ---------------------------------------------------------------- papers
 
 -- Print editions: newspaper PDFs you send to the Kindle yourself (Send to Kindle email, the Gmail inbox, or USB).
--- Any PDF from today whose name mentions one of the four papers is moved into Daily reads as
+-- Any PDF from today whose name mentions TOI, The Hindu or ET (LiveLaw has no print edition) is moved into Daily reads as
 -- "YYYY-MM-DD <Paper> (print).pdf", so the Sunday cleanup clears it with the rest of the week.
 local PRINT = {
     { id = "toi", name = "The Times of India", pats = { " times of india ", " timesofindia ", " toi " } },
     { id = "hindu", name = "The Hindu", pats = { " hindu ", " thehindu " } },
     { id = "et", name = "The Economic Times", pats = { " economic times ", " economictimes ", " et " } },
-    { id = "livelaw", name = "LiveLaw", pats = { " livelaw ", " live law " } },
 }
 local function printEditions()
     local today = os.date("%Y-%m-%d")
