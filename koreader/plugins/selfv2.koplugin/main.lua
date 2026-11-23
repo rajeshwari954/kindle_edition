@@ -39,6 +39,7 @@ local GREY = Blitbuffer.Color8(0x55)
 local LIGHT = Blitbuffer.Color8(0xE6)
 
 local shown_at_launch = false
+local N -- Notion client, loaded from notion.lua
 local force_home = false  -- set by the Home button inside a book
 
 ---------------------------------------------------------------- helpers
@@ -242,13 +243,14 @@ end
 -- A pill: rounded box with centred text. style = "dark" | "light" | "outline"
 function Canvas:pill(str, x, y, h, style, size, min_w)
     local f = face("sans", size or 14)
+    local ghost = style == "ghost" -- see-through outline for use on textures
     local tw = TextWidget:new{ text = str, face = f, bold = true,
-        fgcolor = style == "dark" and WHITE or BLACK }
+        fgcolor = ghost and self.texfg or (style == "dark" and WHITE or BLACK) }
     local w = math.max(tw:getSize().w + px(28), min_w and px(min_w) or 0)
     local frame = FrameContainer:new{
-        background = style == "dark" and BLACK or (style == "grey" and LIGHT or WHITE),
-        bordersize = style == "outline" and 2 or 0,
-        color = BLACK,
+        background = (not ghost) and (style == "dark" and BLACK or (style == "grey" and LIGHT or WHITE)) or nil,
+        bordersize = (style == "outline" or ghost) and 2 or 0,
+        color = ghost and self.texfg or BLACK,
         radius = math.floor(py(h) / 2),
         padding = 0, margin = 0,
         CenterContainer:new{ dimen = Geom:new{ w = w, h = py(h) }, tw },
@@ -300,13 +302,16 @@ function Canvas:rebuild(refresh)
     -- (shown as-is), and draw text that sits on a texture in black, which night mode turns white.
     self.night = G_reader_settings:isTrue("night_mode")
     self.texfg = self.night and BLACK or WHITE
-    local bg = ({ home = "home", papers = "papers", subs = "substacks", library = "library" })[self.mode] .. (self.night and "_night.png" or ".png")
+    local bg = ({ home = "home", papers = "papers", subs = "substacks", library = "library",
+        today = "today", checkin = "checkin" })[self.mode] .. (self.night and "_night.png" or ".png")
     if not exists(plugin_dir .. "/screens/" .. bg) then bg = bg:gsub("_night", "") end
     self:put(ImageWidget:new{ file = plugin_dir .. "/screens/" .. bg, width = Screen:getWidth(), height = Screen:getHeight(),
         file_do_cache = false, original_in_nightmode = true }, 0, 0)
     if self.mode == "home" then self:buildHome()
     elseif self.mode == "papers" then self:buildPapers()
     elseif self.mode == "library" then self:buildLibrary()
+    elseif self.mode == "today" then self:buildToday()
+    elseif self.mode == "checkin" then self:buildCheckin()
     else self:buildSubs() end
     self[1] = OverlapGroup:new{ dimen = self.dimen:copy(), allow_mirroring = false, unpack(self.items) }
     if refresh then UIManager:setDirty(self, refresh) end
@@ -316,6 +321,11 @@ function Canvas:go(mode)
     self.mode = mode
     self.sel, self.page = nil, 1
     if mode == "library" then self.books, info_cache = nil, {} end
+    if (mode == "today" or mode == "checkin") and not self:dashFresh() then
+        self:rebuild("full")
+        self:loadDash()
+        return
+    end
     self:rebuild("full")
 end
 
@@ -394,7 +404,7 @@ function Canvas:buildHome()
     end
 
     local soon = function() UIManager:show(InfoMessage:new{ text = _("Coming in the next update."), timeout = 3 }) end
-    self:zone(L.dash, soon)
+    self:zone(L.dash, function() self:go("today") end)
     self:zone(L.focus, soon)
     self:zone(L.papers, function() self:go("papers") end)
     self:zone(L.subs, function() self:go("subs") end)
@@ -634,6 +644,419 @@ function Canvas:buildLibrary()
     end
 end
 
+---------------------------------------------------------------- dashboard: shared
+
+local TABS = { { "Today", "today" }, { "Check-in", "checkin" }, { "Log" }, { "Week" }, { "Work" } }
+
+function Canvas:tabs(active, y)
+    local x = 30
+    for _i, t in ipairs(TABS) do
+        local style = (t[2] == active) and "dark" or "outline"
+        self:pill(t[1], x, y, 40, style, 14, 130)
+        local target = t[2]
+        self:zone({ x, y - 4, 130, 48 }, function()
+            if target then
+                if target ~= self.mode then self:go(target) end
+            else
+                UIManager:show(InfoMessage:new{ text = t[1] .. " is coming in the next update.", timeout = 3 })
+            end
+        end)
+        x = x + 142
+    end
+end
+
+function Canvas:dashFresh()
+    return self.dash and self.dash.date == N.today() and self.dash.loaded
+end
+
+function Canvas:notionError(err)
+    if err == "no_token" or err == "bad_token" then
+        self.plugin:notionSetup(err == "bad_token")
+    elseif err == "not_shared" then
+        UIManager:show(InfoMessage:new{ text = _("Notion says the self.v2 page isn't shared with the Kindle connection yet. In Notion, open self.v2 → ••• → Connections → add your Kindle connection.") })
+    else
+        UIManager:show(InfoMessage:new{ text = "Notion: " .. tostring(err) .. "\nCheck Wi-Fi and try again.", timeout = 6 })
+    end
+end
+
+-- Fetch everything Today and Check-in need, in one go.
+function Canvas:loadDash()
+    if not N.token() then self.plugin:notionSetup(false) return end
+    NetworkMgr:runWhenOnline(function()
+        local busy = InfoMessage:new{ text = _("Loading from Notion…") }
+        UIManager:show(busy)
+        UIManager:forceRePaint()
+        local today, tomorrow = N.today(), N.nextDay(N.today())
+        local d = { date = today, blocks = {}, todos = {}, attend = {}, lectures = {} }
+        local ok, res = N.query(N.DS.checkin, { property = "Date", date = { equals = today } })
+        if not ok then UIManager:close(busy); self:notionError(res); return end
+        d.checkin = res[1]
+        ok, res = N.query(N.DS.blocks, { ["or"] = {
+            { ["and"] = {
+                { property = "Planned", date = { on_or_after = today .. "T00:00:00+05:30" } },
+                { property = "Planned", date = { before = tomorrow .. "T00:00:00+05:30" } } } },
+            { property = "Repeat", select = { equals = "Every day" } },
+            { property = "Repeat", select = { equals = "Weekdays" } },
+            { property = "Repeat", select = { equals = "Mon to Sat" } },
+        } })
+        if ok then d.blocks = res end
+        ok, res = N.query(N.DS.todos, { ["or"] = {
+            { property = "Date", date = { equals = today } },
+            { ["and"] = { { property = "Date", date = { before = today } }, { property = "Done", checkbox = { equals = false } } } },
+        } })
+        if ok then d.todos = res end
+        ok, res = N.query(N.DS.attend, { property = "Date", date = { equals = today } })
+        if ok then for _i, pg in ipairs(res) do d.attend[N.get(pg, "Type") or "?"] = pg end end
+        ok, res = N.query(N.DS.lectures, { property = "Date", date = { equals = today } })
+        if ok then for _i, pg in ipairs(res) do d.lectures[N.get(pg, "Subject") or "?"] = pg end end
+        d.loaded = true
+        self.dash = d
+        UIManager:close(busy)
+        self:rebuild("full")
+    end)
+end
+
+-- Run a Notion write; on success apply `after` to local state and redraw.
+function Canvas:write(fn, after)
+    NetworkMgr:runWhenOnline(function()
+        local ok, res = fn()
+        if not ok then self:notionError(res) return end
+        if after then after(res) end
+        self:rebuild("ui")
+    end)
+end
+
+-- Today's Daily Check-in row, created on first write.
+function Canvas:checkinRow(cb)
+    if self.dash.checkin then return cb(self.dash.checkin) end
+    self:write(function()
+        return N.create(N.DS.checkin, { Day = N.title(N.dayTitle()), Date = N.date(N.today()) })
+    end, function(pg) self.dash.checkin = pg; cb(pg) end)
+end
+
+function Canvas:setProp(pg, name, value)
+    pg.properties = pg.properties or {}
+    local p = pg.properties[name] or {}
+    if type(value) == "boolean" then p.type = "checkbox"; p.checkbox = value
+    elseif type(value) == "number" then p.type = "number"; p.number = value
+    elseif type(value) == "string" then p.type = "select"; p.select = { name = value } end
+    pg.properties[name] = p
+end
+
+---------------------------------------------------------------- dashboard: Today
+
+local WEEKDAYS = { Weekdays = { [2] = 1, [3] = 1, [4] = 1, [5] = 1, [6] = 1 },
+    ["Mon to Sat"] = { [2] = 1, [3] = 1, [4] = 1, [5] = 1, [6] = 1, [7] = 1 } }
+
+function Canvas:todayBlocks()
+    local today = N.today()
+    local wday = tonumber(os.date("%w")) + 1 -- 1 = Sunday
+    local out = {}
+    for _i, pg in ipairs(self.dash.blocks or {}) do
+        local pl = N.get(pg, "Planned")
+        local rep = N.get(pg, "Repeat")
+        local s, sd = N.localTime(pl and pl.start)
+        local e = N.localTime(pl and pl.finish)
+        local include = (sd == today)
+        if rep == "Every day" then include = true
+        elseif WEEKDAYS[rep] then include = WEEKDAYS[rep][wday] ~= nil end
+        if include and s then
+            table.insert(out, { pg = pg, title = N.get(pg, "Block") or "", start = s, finish = e,
+                cat = N.get(pg, "Category") or "", status = N.get(pg, "Status") or "Planned",
+                repeats = rep and rep ~= "Once" })
+        end
+    end
+    table.sort(out, function(a, b) return a.start < b.start end)
+    return out
+end
+
+local NEXT_STATUS = { Planned = "Done", Done = "Skipped", Skipped = "Planned", Shifted = "Done" }
+
+function Canvas:buildToday()
+    local L = self.L.today
+    self:zone(L.back, function() self:go("home") end)
+    self:text((os.date("%A, %d %B"):gsub(" 0", " ")), "sans", 16, L.sub[1], L.sub[2], GREY)
+    self:tabs("today", L.tabs_y)
+    if not self:dashFresh() then
+        self:lines("Loading from Notion…", "sans", 17, 52, L.blk_y, 600, 1, GREY)
+        return
+    end
+    local blocks = self:todayBlocks()
+    local nowm = tonumber(os.date("%H")) * 60 + tonumber(os.date("%M"))
+
+    -- now / next
+    local cur, nxt
+    for _i, b in ipairs(blocks) do
+        if b.start <= nowm and (b.finish or b.start + 60) > nowm then cur = cur or b end
+        if b.start > nowm and not nxt then nxt = b end
+    end
+    local nw = L.now
+    if cur then
+        self:lines(cur.title, "serif", 28, nw[1] + 20, nw[2] + 40, 640, 1, self.texfg)
+        self:text(N.hhmm(cur.start) .. "–" .. N.hhmm(cur.finish) .. (cur.cat ~= "" and ("  ·  " .. cur.cat) or ""), "sans", 15, nw[1] + 20, nw[2] + 84, self.texfg)
+    else
+        self:lines("Free time", "serif", 28, nw[1] + 20, nw[2] + 40, 640, 1, self.texfg)
+        self:text(nxt and ("Next: " .. nxt.title .. " at " .. N.hhmm(nxt.start)) or "Nothing else planned today", "sans", 15, nw[1] + 20, nw[2] + 84, self.texfg)
+    end
+
+    -- time blocks, 6 per page
+    local per = L.blk_rows
+    self.blk_page = self.blk_page or 1
+    local pages = math.max(1, math.ceil(#blocks / per))
+    if self.blk_page > pages then self.blk_page = pages end
+    if pages > 1 then
+        self:pill("‹", L.blk_prev[1], L.blk_prev[2], L.blk_prev[4], "outline", 18, L.blk_prev[3])
+        self:pill("›", L.blk_next[1], L.blk_next[2], L.blk_next[4], "dark", 18, L.blk_next[3])
+        self:zone(L.blk_prev, function() if self.blk_page > 1 then self.blk_page = self.blk_page - 1; self:rebuild("ui") end end)
+        self:zone(L.blk_next, function() if self.blk_page < pages then self.blk_page = self.blk_page + 1; self:rebuild("ui") end end)
+    end
+    if #blocks == 0 then
+        self:lines("No time blocks today. Add them in Notion or the self.v2 app.", "sans", 15, 52, L.blk_y + 6, 640, 2, GREY, 22)
+    end
+    for k = 1, per do
+        local b = blocks[(self.blk_page - 1) * per + k]
+        if not b then break end
+        local y = L.blk_y + (k - 1) * L.blk_h
+        local live = b.start <= nowm and (b.finish or b.start + 60) > nowm
+        self:text(N.hhmm(b.start) .. (b.finish and ("–" .. N.hhmm(b.finish)) or ""), "sans", 14, 52, y + 4, live and BLACK or GREY, true)
+        self:lines(b.title, "serif", 19, 190, y, 380, 1)
+        self:text(b.cat .. (b.repeats and "  ·  repeats" or ""), "sans", 12, 190, y + 28, GREY)
+        if b.repeats then
+            self:pill("Daily", 596, y + 4, 32, "grey", 12, 110)
+        else
+            local st = b.status
+            self:pill(st, 596, y + 4, 32, st == "Done" and "dark" or (st == "Skipped" and "grey" or "outline"), 12, 110)
+            self:zone({ 586, y - 4, 130, L.blk_h - 4 }, function()
+                local new = NEXT_STATUS[st] or "Done"
+                self:write(function() return N.update(b.pg.id, { Status = N.select(new) }) end,
+                    function() self:setProp(b.pg, "Status", new) end)
+            end)
+        end
+    end
+
+    -- to-dos
+    local todos = {}
+    for _i, pg in ipairs(self.dash.todos or {}) do
+        local dt = N.get(pg, "Date")
+        table.insert(todos, { pg = pg, task = N.get(pg, "Task") or "", done = N.get(pg, "Done"),
+            overdue = dt and dt.start and dt.start:sub(1, 10) < N.today() })
+    end
+    table.sort(todos, function(a, b) if a.done ~= b.done then return not a.done end return a.task < b.task end)
+    self:pill("+ Add", L.todo_add[1], L.todo_add[2], L.todo_add[4], "dark", 14, L.todo_add[3])
+    self:zone(L.todo_add, function() self:addTodo() end)
+    local tper = L.todo_rows
+    self.todo_page = self.todo_page or 1
+    local tpages = math.max(1, math.ceil(#todos / tper))
+    if self.todo_page > tpages then self.todo_page = tpages end
+    local open = 0
+    for _i, t in ipairs(todos) do if not t.done then open = open + 1 end end
+    self:text(open .. " open" .. (tpages > 1 and ("  ·  page " .. self.todo_page .. "/" .. tpages .. " ›") or ""), "sans", 13, 180, L.todos[2] + 24, GREY)
+    if tpages > 1 then
+        self:zone({ 170, L.todos[2] + 8, 300, 40 }, function() self.todo_page = self.todo_page % tpages + 1; self:rebuild("ui") end)
+    end
+    if #todos == 0 then
+        self:lines("Nothing on the list. Tap + Add.", "sans", 15, 52, L.todo_y + 6, 600, 1, GREY)
+    end
+    for k = 1, tper do
+        local t = todos[(self.todo_page - 1) * tper + k]
+        if not t then break end
+        local y = L.todo_y + (k - 1) * L.todo_h
+        self:dot(52, y + 4, 24, t.done)
+        self:lines(t.task, "serif", 19, 92, y + 2, 520, 1, t.done and GREY or BLACK)
+        if t.overdue and not t.done then self:pill("from before", 600, y + 2, 28, "grey", 11, 106) end
+        self:zone({ 40, y - 6, 560, L.todo_h - 4 }, function()
+            local new = not t.done
+            self:write(function() return N.update(t.pg.id, { Done = N.check(new) }) end,
+                function() self:setProp(t.pg, "Done", new) end)
+        end)
+    end
+end
+
+function Canvas:addTodo()
+    local InputDialog = require("ui/widget/inputdialog")
+    local dlg
+    dlg = InputDialog:new{
+        title = _("New to-do for today"),
+        input_hint = _("What needs doing?"),
+        buttons = { {
+            { text = _("Cancel"), id = "close", callback = function() UIManager:close(dlg) end },
+            { text = _("Add"), is_enter_default = true, callback = function()
+                local task = dlg:getInputText()
+                UIManager:close(dlg)
+                if not task or not task:match("%S") then return end
+                self:write(function()
+                    local props = { Task = N.title(task), Date = N.date(N.today()), Done = N.check(false) }
+                    if self.dash.checkin then props["Check-in day"] = { relation = { { id = self.dash.checkin.id } } } end
+                    return N.create(N.DS.todos, props)
+                end, function(pg) table.insert(self.dash.todos, pg) end)
+            end },
+        } },
+    }
+    UIManager:show(dlg)
+    dlg:onShowKeyboard()
+end
+
+---------------------------------------------------------------- dashboard: Check-in
+
+local HABITS = { "Meditation", "News update", "Vit B12", "Vit D3", "Magnesium", "Gym", "5 pages", "Riyaaz", "Period day" }
+local SUBJECTS = { "Jurisprudence", "Law of Contract", "Constitutional Law-I", "Torts MVA & CPA", "BNS", "Legal Aid", "Mentoring", "Tutorials" }
+local SUBJECT_SHORT = { ["Constitutional Law-I"] = "Const. Law", ["Torts MVA & CPA"] = "Torts", ["Law of Contract"] = "Contract" }
+local LECTURE_NEXT = { [""] = "Attended", Attended = "Skipped", Skipped = "Cancelled", Cancelled = "Attended", Holiday = "Attended" }
+local DEFAULT_TIMES = { College = { "07:30", "13:00" }, Work = { "14:00", "18:30" } }
+
+function Canvas:timeDialog(title, current, cb)
+    local InputDialog = require("ui/widget/inputdialog")
+    local dlg
+    dlg = InputDialog:new{
+        title = title, input = current or "", input_hint = "HH:MM, e.g. 07:30", input_type = "number",
+        buttons = { {
+            { text = _("Cancel"), id = "close", callback = function() UIManager:close(dlg) end },
+            { text = _("Now"), callback = function() UIManager:close(dlg); cb(os.date("%H:%M")) end },
+            { text = _("Save"), is_enter_default = true, callback = function()
+                local v = (dlg:getInputText() or ""):gsub("%.", ":")
+                UIManager:close(dlg)
+                local h, m = v:match("^(%d%d?):?(%d%d)$")
+                if h and tonumber(h) < 24 and tonumber(m) < 60 then cb(string.format("%02d:%s", tonumber(h), m)) end
+            end },
+        } },
+    }
+    UIManager:show(dlg)
+    dlg:onShowKeyboard()
+end
+
+function Canvas:attendCard(kind, rect)
+    local pg = self.dash.attend[kind]
+    local status = pg and N.get(pg, "Status") or nil
+    local x, y = rect[1], rect[2]
+    local opts = { { "Went", "Attended" }, { "Missed", "Missed" }, { "Holiday", "Holiday" } }
+    local bx = x + 16
+    for _i, o in ipairs(opts) do
+        local on = status == o[2]
+        self:pill(o[1], bx, y + 62, 36, on and "light" or "ghost", 13, 96)
+        self:zone({ bx, y + 58, 100, 44 }, function()
+            self:setAttendance(kind, { Status = N.select(o[2]) }, function(p) self:setProp(p, "Status", o[2]) end)
+        end)
+        bx = bx + 102
+    end
+    local inn = pg and N.get(pg, "In")
+    local out = pg and N.get(pg, "Out")
+    local inm = inn and N.localTime(inn.start)
+    local outm = out and N.localTime(out.start)
+    local def = DEFAULT_TIMES[kind]
+    self:text("In", "sans", 13, x + 18, y + 120, self.texfg, true)
+    self:pill(inm and N.hhmm(inm) or def[1] .. "?", x + 16, y + 142, 40, "light", 16, 140)
+    self:text("Out", "sans", 13, x + 176, y + 120, self.texfg, true)
+    self:pill(outm and N.hhmm(outm) or def[2] .. "?", x + 174, y + 142, 40, "light", 16, 140)
+    local function setTime(field, cur, label)
+        self:timeDialog(kind .. " · time " .. label, cur, function(hhmm)
+            local iso = N.isoAt(N.today(), hhmm)
+            self:setAttendance(kind, { [field] = N.date(iso) }, function(p)
+                p.properties = p.properties or {}
+                p.properties[field] = { type = "date", date = { start = iso } }
+            end)
+        end)
+    end
+    self:zone({ x + 12, y + 136, 150, 52 }, function() setTime("In", inm and N.hhmm(inm) or def[1], "in") end)
+    self:zone({ x + 170, y + 136, 150, 52 }, function() setTime("Out", outm and N.hhmm(outm) or def[2], "out") end)
+    local hrs = (inm and outm and outm > inm) and string.format("%.1f hours", (outm - inm) / 60) or (status and status or "Not logged yet")
+    self:text(hrs, "sans", 14, x + 18, y + 204, self.texfg)
+end
+
+function Canvas:setAttendance(kind, props, apply)
+    local pg = self.dash.attend[kind]
+    if pg then
+        self:write(function() return N.update(pg.id, props) end, function() apply(pg) end)
+    else
+        props.Day = N.title(kind .. " · " .. N.dayTitle())
+        props.Date = N.date(N.today())
+        props.Type = N.select(kind)
+        if not props.Status then props.Status = N.select("Attended") end
+        self:write(function() return N.create(N.DS.attend, props) end, function(newpg) self.dash.attend[kind] = newpg end)
+    end
+end
+
+function Canvas:buildCheckin()
+    local L = self.L.checkin
+    self:zone(L.back, function() self:go("home") end)
+    self:text((os.date("%A, %d %B"):gsub(" 0", " ")), "sans", 16, L.sub[1], L.sub[2], GREY)
+    self:tabs("checkin", L.tabs_y)
+    if not self:dashFresh() then
+        self:lines("Loading from Notion…", "sans", 17, 52, L.lectures[2] + 60, 600, 1, GREY)
+        return
+    end
+    self:attendCard("College", L.college)
+    self:attendCard("Work", L.work)
+
+    -- lectures: tap to cycle Attended → Skipped → Cancelled
+    local lx, ly = 52, L.lectures[2] + 52
+    self:text("Tap: attended → skipped → cancelled", "sans", 12, 380, L.lectures[2] + 20, GREY)
+    for _i, sub in ipairs(SUBJECTS) do
+        local pg = self.dash.lectures[sub]
+        local st = pg and N.get(pg, "Status") or ""
+        local label = (SUBJECT_SHORT[sub] or sub) .. (st == "Skipped" and " ×" or (st == "Cancelled" and " –" or ""))
+        local style = st == "Attended" and "dark" or (st == "" and "outline" or "grey")
+        local w = self:pill(label, lx, ly, 36, style, 13)
+        self:zone({ lx, ly - 4, w, 44 }, function()
+            local new = LECTURE_NEXT[st] or "Attended"
+            if pg then
+                self:write(function() return N.update(pg.id, { Status = N.select(new) }) end,
+                    function() self:setProp(pg, "Status", new) end)
+            else
+                self:write(function()
+                    return N.create(N.DS.lectures, { Lecture = N.title(sub .. " · " .. N.dayTitle()),
+                        Subject = N.select(sub), Date = N.date(N.today()), Status = N.select(new) })
+                end, function(newpg) self.dash.lectures[sub] = newpg end)
+            end
+        end)
+        lx = lx + w + 8
+        if lx > 620 then lx, ly = 52, ly + 46 end
+    end
+
+    -- habits
+    local row = self.dash.checkin
+    local hx0, hy0 = 52, L.habits[2] + 50
+    for i, h in ipairs(HABITS) do
+        local col, r = (i - 1) % 3, math.floor((i - 1) / 3)
+        local x, y = hx0 + col * 220, hy0 + r * 46
+        local on = row and N.get(row, h) or false
+        self:dot(x, y + 6, 24, on)
+        self:text(h, "sans", 16, x + 34, y + 6, BLACK, on)
+        self:zone({ x - 6, y - 4, 214, 44 }, function()
+            self:checkinRow(function(pg)
+                local new = not (N.get(pg, h) or false)
+                self:write(function() return N.update(pg.id, { [h] = N.check(new) }) end,
+                    function() self:setProp(pg, h, new) end)
+            end)
+        end)
+    end
+
+    -- herbal tea, calm, focus
+    local dy = L.dials[2]
+    local tea = row and N.get(row, "Herbal tea") or 0
+    self:text("Herbal tea", "sans", 15, 52, dy + 18, BLACK, true)
+    self:pill("–", 52, dy + 48, 40, "outline", 18, 52)
+    self:text(tostring(tea) .. " / 2", "serif", 24, 116, dy + 52)
+    self:pill("+", 186, dy + 48, 40, "dark", 18, 52)
+    local function setNum(name, value)
+        self:checkinRow(function(pg)
+            self:write(function() return N.update(pg.id, { [name] = N.num(value) }) end,
+                function() self:setProp(pg, name, value) end)
+        end)
+    end
+    self:zone({ 48, dy + 44, 60, 50 }, function() if tea > 0 then setNum("Herbal tea", tea - 1) end end)
+    self:zone({ 182, dy + 44, 60, 50 }, function() setNum("Herbal tea", tea + 1) end)
+    for k, name in ipairs({ "Calm", "Focus" }) do
+        local x0 = 276 + (k - 1) * 224
+        local v = row and N.get(row, name) or nil
+        self:text(name, "sans", 15, x0, dy + 18, BLACK, true)
+        for n = 1, 5 do
+            local x = x0 + (n - 1) * 42
+            self:pill(tostring(n), x, dy + 48, 38, (v and n <= v) and "dark" or "outline", 14, 38)
+            self:zone({ x - 2, dy + 44, 42, 48 }, function() setNum(name, n) end)
+        end
+    end
+end
+
 ---------------------------------------------------------------- substacks
 
 function Canvas:showFollowing()
@@ -722,6 +1145,7 @@ local SelfV2 = WidgetContainer:extend{
 function SelfV2:init()
     plugin_dir = self.path
     self.layout = dofile(self.path .. "/layout.lua")
+    N = N or dofile(self.path .. "/notion.lua")
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
     if self.ui.document then
@@ -934,6 +1358,29 @@ function SelfV2:checkUpdates()
     end)
 end
 
+function SelfV2:notionSetup(bad)
+    local InputDialog = require("ui/widget/inputdialog")
+    local dlg
+    dlg = InputDialog:new{
+        title = bad and _("Notion didn't accept that key") or _("Connect Notion"),
+        description = _("Paste or type your Notion integration secret (it starts with ntn_). Easier: copy it into koreader/settings/selfv2_notion_token.txt over USB."),
+        input = "", input_hint = "ntn_…",
+        buttons = { {
+            { text = _("Cancel"), id = "close", callback = function() UIManager:close(dlg) end },
+            { text = _("Save"), is_enter_default = true, callback = function()
+                local t = dlg:getInputText()
+                UIManager:close(dlg)
+                if t and t:match("%S") then
+                    N.setToken(t)
+                    if self.canvas and self.canvas.is_open then self.canvas.dash = nil; self.canvas:loadDash() end
+                end
+            end },
+        } },
+    }
+    UIManager:show(dlg)
+    dlg:onShowKeyboard()
+end
+
 function SelfV2:settingsDialog(canvas)
     local dlg
     local function item(text, cb) return { { text = text, callback = function() UIManager:close(dlg); cb() end } } end
@@ -948,6 +1395,7 @@ function SelfV2:settingsDialog(canvas)
             item(_("Open files"), function() canvas:close() end),
             item(_("Wi-Fi on / off"), function() self:toggleWifi() end),
             item(_("Check for updates"), function() self:checkUpdates() end),
+            item(_("Connect Notion"), function() self:notionSetup(false) end),
             item(G_reader_settings:nilOrTrue("selfv2_home_after_book") and _("Show Home after closing a book: on") or _("Show Home after closing a book: off"),
                 function() G_reader_settings:flipNilOrTrue("selfv2_home_after_book") end),
             item(_("Restart KOReader"), function()

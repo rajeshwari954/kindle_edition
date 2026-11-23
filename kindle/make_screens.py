@@ -126,6 +126,20 @@ L = {
         "panel": (PAD, 748, 698, 256), "btn_prev": (586, 760, 56, 38), "btn_next": (652, 760, 56, 38),
         "rows_y": 812, "row_h": 62, "rows": 3,
     },
+    "today": {
+        "back": (PAD, 20, 116, 40), "sub": (PAD, 128), "tabs_y": 164,
+        "now": (PAD, 218, 698, 120),
+        "blocks": (PAD, 352, 698, 404), "blk_prev": (586, 362, 56, 38), "blk_next": (652, 362, 56, 38),
+        "blk_y": 414, "blk_h": 56, "blk_rows": 6,
+        "todos": (PAD, 770, 698, 232), "todo_add": (588, 780, 120, 38), "todo_y": 830, "todo_h": 54, "todo_rows": 3,
+    },
+    "checkin": {
+        "back": (PAD, 20, 116, 40), "sub": (PAD, 128), "tabs_y": 164,
+        "college": (PAD, 218, 341, 254), "work": (387, 218, 341, 254),
+        "lectures": (PAD, 486, 698, 158),
+        "habits": (PAD, 658, 698, 200),
+        "dials": (PAD, 872, 698, 130),
+    },
     "subs": {
         "back": (PAD, 20, 116, 40), "sub": (PAD, 128),
         "pick": (PAD, 166, 698, 150),
@@ -274,6 +288,52 @@ def bake_library():
     save(im, "library.png")
 
 
+def bake_today():
+    im = page()
+    l = L["today"]
+    d = ImageDraw.Draw(im)
+    back_pill(d)
+    d.text((PAD, 74), "Today", font=f(MARC, 42), fill=INK(17))
+    folder(im, "f_zebra.png", W - PAD - 124, 18, 112)
+    textured(im, l["now"], "zebra_s.jpg", 0.5, 26)
+    d = ImageDraw.Draw(im)
+    x, y, w, h = l["now"]
+    d.text((x + 20, y + 16), "NOW", font=f(SANS, 13, 700), fill=(235, 235, 235, 255))
+    card(im, l["blocks"], 230)
+    card(im, l["todos"], 230)
+    d = ImageDraw.Draw(im)
+    d.text((52, l["blocks"][1] + 14), "Time blocks", font=f(MARC, 26), fill=INK(17))
+    d.text((52, l["todos"][1] + 14), "To-dos", font=f(MARC, 26), fill=INK(17))
+    for n in range(l["blk_rows"] - 1):
+        yy = l["blk_y"] + (n + 1) * l["blk_h"] - 6
+        d.line((52, yy, 706, yy), fill=INK(225), width=1)
+    for n in range(l["todo_rows"] - 1):
+        yy = l["todo_y"] + (n + 1) * l["todo_h"] - 6
+        d.line((52, yy, 706, yy), fill=INK(225), width=1)
+    save(im, "today.png")
+
+
+def bake_checkin():
+    im = page()
+    l = L["checkin"]
+    d = ImageDraw.Draw(im)
+    back_pill(d)
+    d.text((PAD, 74), "Check-in", font=f(MARC, 42), fill=INK(17))
+    folder(im, "f_blackcow.png", W - PAD - 124, 18, 112)
+    textured(im, l["college"], "cow_s.jpg", 0.48, 26)
+    textured(im, l["work"], "fawn_s.jpg", 0.48, 26)
+    d = ImageDraw.Draw(im)
+    for key, label in [("college", "College"), ("work", "Work")]:
+        x, y, w, h = l[key]
+        d.text((x + 18, y + 14), label, font=f(MARC, 28), fill=(255, 255, 255, 255))
+    for key, label in [("lectures", "Lectures today"), ("habits", "Habits"), ("dials", "")]:
+        card(im, l[key], 230)
+        d = ImageDraw.Draw(im)
+        if label:
+            d.text((52, l[key][1] + 12), label, font=f(MARC, 24), fill=INK(17))
+    save(im, "checkin.png")
+
+
 def write_layout():
     def lua(v):
         if isinstance(v, dict):
@@ -292,6 +352,8 @@ if __name__ == "__main__":
         bake_papers()
         bake_subs()
         bake_library()
+        bake_today()
+        bake_checkin()
     NIGHT = False
     write_layout()
     fonts = PLUGIN / "fonts"
