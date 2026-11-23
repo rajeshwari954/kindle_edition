@@ -40,6 +40,7 @@ local LIGHT = Blitbuffer.Color8(0xE6)
 
 local shown_at_launch = false
 local N -- Notion client, loaded from notion.lua
+local S -- settings helpers, loaded from settings.lua
 local force_home = false  -- set by the Home button inside a book
 
 ---------------------------------------------------------------- helpers
@@ -353,9 +354,7 @@ end
 
 function Canvas:buildHome()
     local L = self.L.home
-    local h = tonumber(os.date("%H"))
-    local hello = h < 12 and "GOOD MORNING," or (h < 17 and "GOOD AFTERNOON," or "GOOD EVENING,")
-    self:text(hello, "sans", 14, L.label[1], L.label[2], GREY, true)
+    self:text(S.greeting(), "sans", 14, L.label[1], L.label[2], GREY, true)
 
     local papers, subs = self:files("paper"), self:files("substacks")[1]
     local x = 30
@@ -736,11 +735,13 @@ function SelfV2:init()
     plugin_dir = self.path
     self.layout = dofile(self.path .. "/layout.lua")
     N = N or dofile(self.path .. "/notion.lua")
+    S = S or dofile(self.path .. "/settings.lua")
     if not Canvas.buildToday then
         dofile(self.path .. "/dash.lua")(Canvas, {
             N = N, px = px, py = py, face = face, wrap = wrap, exists = exists,
             BLACK = BLACK, WHITE = WHITE, GREY = GREY, LIGHT = LIGHT,
             timetable = dofile(self.path .. "/timetable.lua"),
+            greeting = S.greeting,
         })
     end
     self:onDispatcherRegisterActions()
@@ -754,6 +755,7 @@ function SelfV2:init()
     -- and always after tapping Home inside a book.
     local first = not shown_at_launch
     shown_at_launch = true
+    if first then UIManager:nextTick(function() S.lock() end) end
     local want = force_home
         or (G_reader_settings:nilOrTrue("selfv2_home_on_start") and (first or G_reader_settings:nilOrTrue("selfv2_home_after_book")))
     force_home = false
@@ -847,6 +849,10 @@ end
 
 function SelfV2:onDispatcherRegisterActions()
     Dispatcher:registerAction("selfv2_home", { category = "none", event = "SelfV2Home", title = _("self.v2 Home"), general = true })
+end
+
+function SelfV2:onResume()
+    S.lock()
 end
 
 function SelfV2:onToggleNightMode()
@@ -980,25 +986,26 @@ end
 
 function SelfV2:settingsDialog(canvas)
     local dlg
-    local function item(text, cb) return { { text = text, callback = function() UIManager:close(dlg); cb() end } } end
+    local function btn(text, cb) return { text = text, callback = function() UIManager:close(dlg); cb() end } end
     dlg = ButtonDialog:new{
         title = _("Settings"),
         buttons = {
-            item(_("KOReader menu · tools & settings"), function()
-                -- the full KOReader menu (tools, settings, network, fonts…) on top of Home
+            { btn(S.isDark() and _("Light mode") or _("Dark mode"), function() S.toggleDark(self) end),
+              btn(_("Wi-Fi networks"), function() S.wifiMenu(self) end) },
+            { btn(_("Reading font"), function() S.fontMenu() end),
+              btn(_("Text size"), function() S.sizeMenu() end) },
+            { btn(S.hasPin() and _("Passcode: on") or _("Passcode: off"), function() S.pinMenu() end),
+              btn(_("Connect Notion"), function() self:notionSetup(false) end) },
+            { btn(_("KOReader menu · all settings"), function()
                 local menu = self.ui and self.ui.menu
                 if menu and menu.onShowMenu then menu:onShowMenu() end
-            end),
-            item(_("Open files"), function() canvas:close() end),
-            item(_("Wi-Fi on / off"), function() self:toggleWifi() end),
-            item(_("Check for updates"), function() self:checkUpdates() end),
-            item(_("Connect Notion"), function() self:notionSetup(false) end),
-            item(G_reader_settings:nilOrTrue("selfv2_home_after_book") and _("Show Home after closing a book: on") or _("Show Home after closing a book: off"),
+            end) },
+            { btn(_("Open files"), function() canvas:close() end),
+              btn(_("Check for updates"), function() self:checkUpdates() end) },
+            { btn(G_reader_settings:nilOrTrue("selfv2_home_after_book") and _("Home after a book: on") or _("Home after a book: off"),
                 function() G_reader_settings:flipNilOrTrue("selfv2_home_after_book") end),
-            item(_("Restart KOReader"), function()
-                if UIManager.restartKOReader then UIManager:restartKOReader() end
-            end),
-            item(_("Close"), function() end),
+              btn(_("Restart KOReader"), function() if UIManager.restartKOReader then UIManager:restartKOReader() end end) },
+            { btn(_("Close"), function() end) },
         },
     }
     UIManager:show(dlg)

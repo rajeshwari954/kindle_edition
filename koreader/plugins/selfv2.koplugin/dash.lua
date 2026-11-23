@@ -244,8 +244,7 @@ end
 function Canvas:buildToday()
     local L = self.L.today
     local hr = tonumber(os.date("%H"))
-    local hello = hr < 12 and "GOOD MORNING," or (hr < 17 and "GOOD AFTERNOON," or "GOOD EVENING,")
-    self:text(hello, "sans", 15, L.label[1], L.label[2], GREY, true)
+    self:text(ctx.greeting and ctx.greeting() or "HELLO,", "sans", 15, L.label[1], L.label[2], GREY, true)
     self:pill("Focus board", L.focus[1], L.focus[2], L.focus[4], "dark", 15, L.focus[3])
     self:zone(L.focus, function() UIManager:show(InfoMessage:new{ text = _("The Focus board is coming in a later update."), timeout = 3 }) end)
     self:datePill(L.date[1], L.date[2], L.date[3], L.date[4])
