@@ -552,7 +552,13 @@ def main():
         fname = f"{today_ist.isoformat()} {paper} (print).pdf"
         pdir = out / "print"
         pdir.mkdir(parents=True, exist_ok=True)
-        (pdir / fname).write_bytes(b["data"])
+        data = b["data"]
+        try:
+            import kindlefit
+            data = kindlefit.fit(data)  # cut into screen-sized sections for the 6-inch screen
+        except Exception as e:
+            print(f"  ! couldn't resize {paper} for the Kindle, sending it as is: {e}", file=sys.stderr)
+        (pdir / fname).write_bytes(data)
         manifest["files"].append({"id": "print:" + paper, "kind": "print", "name": paper, "file": fname, "url": "print/" + fname})
         print(f"  print edition: {paper}")
     books = kept

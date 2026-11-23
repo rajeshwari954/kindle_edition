@@ -615,14 +615,7 @@ function Canvas:loadFocus()
             local ext = (url:lower():match("%.png[%?]") or url:lower():match("%.png$")) and "png" or "jpg"
             for _j, e in ipairs({ "jpg", "png" }) do os.remove(FOCUS_DIR .. "/focus_" .. i .. "." .. e) end
             local path = FOCUS_DIR .. "/focus_" .. i .. "." .. ext
-            if N.download(url, path) and ctx.sleepDir then
-                -- also rotate on the lock screen
-                local src = io.open(path, "rb")
-                local dst = io.open(ctx.sleepDir() .. "/selfv2_focus_" .. i .. "." .. ext, "wb")
-                if src and dst then dst:write(src:read("*a")) end
-                if src then src:close() end
-                if dst then dst:close() end
-            end
+            N.download(url, path)
         end
         self.focusSynced = true
         if self.mode == "focus" then self:rebuild("full") end
@@ -671,7 +664,6 @@ function Canvas:buildFocus()
         self:zone({ tx, ty, tw, th }, function() self.fview = i; self:rebuild("full") end)
     end
     self:text("Tap an image to see it full screen", "sans", 14, 30, L.foot_y, fg)
-    self:rtext("Also rotates on your lock screen", "sans", 14, 728, L.foot_y, fg)
 end
 
 end
