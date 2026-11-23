@@ -19,6 +19,12 @@ N.DS = {
     attend   = "42126113-480c-813c-8b0e-000b63a190dd",
     lectures = "42126113-480c-818e-80fc-000beaf9718f",
     sleep    = "f23d3475-5992-46c1-8484-34d3aa17724a",
+    strength = "252be1e4-11bb-499c-9e24-76d3aa0abd71",
+    food     = "021aea06-c3ab-455f-ac7e-c9c98ccc6f94",
+    talk     = "bbb73340-7fcf-4123-bd64-45329ae5e446",
+    reading  = "b8422be4-eaea-490f-9aec-151215d1e750",
+    expenses = "d4f0d8c6-8d7e-45ef-be19-d6ad07966fb9",
+    work     = "42126113-480c-810d-880b-000bf04160fd",
 }
 
 function N.token()
@@ -80,9 +86,43 @@ function N.query(ds, filter, sorts)
     local body = { page_size = 100 }
     if filter then body.filter = filter end
     if sorts then body.sorts = sorts end
-    local ok, res = N.request("POST", "/data_sources/" .. ds .. "/query", body)
+    local out = {}
+    for _page = 1, 10 do
+        local ok, res = N.request("POST", "/data_sources/" .. ds .. "/query", body)
+        if not ok then return false, res end
+        for _i, r in ipairs(res.results or {}) do out[#out + 1] = r end
+        if res.has_more ~= true or type(res.next_cursor) ~= "string" then break end
+        body.start_cursor = res.next_cursor
+    end
+    return true, out
+end
+
+-- rows whose date property falls between two dates (inclusive)
+function N.between(ds, prop, from, to)
+    return N.query(ds, { ["and"] = { { property = prop, date = { on_or_after = from } },
+        { property = prop, date = { on_or_before = to } } } })
+end
+
+function N.children(id)
+    local ok, res = N.request("GET", "/blocks/" .. id .. "/children?page_size=100")
     if not ok then return false, res end
     return true, res.results or {}
+end
+
+-- plain GET of a file (e.g. a Notion image) to a path; returns true on success
+function N.download(url, path)
+    local http = require("socket.http")
+    local ltn12 = require("ltn12")
+    local socket = require("socket")
+    local socketutil = require("socketutil")
+    local fh = io.open(path .. ".part", "wb")
+    if not fh then return false end
+    socketutil:set_timeout(socketutil.FILE_BLOCK_TIMEOUT, socketutil.FILE_TOTAL_TIMEOUT)
+    local code = socket.skip(1, http.request{ url = url, method = "GET", sink = ltn12.sink.file(fh) })
+    socketutil:reset_timeout()
+    if code == 200 then return os.rename(path .. ".part", path) end
+    os.remove(path .. ".part")
+    return false
 end
 
 function N.create(ds, props)
@@ -100,10 +140,20 @@ end
 ---------------------------------------------------------------- property helpers
 
 function N.title(s) return { title = { { text = { content = s } } } } end
-function N.text(s) return { rich_text = { { text = { content = s } } } } end
+function N.text(s)
+    if s == nil or s == "" then return { rich_text = {} } end
+    return { rich_text = { { text = { content = s } } } }
+end
 function N.check(b) return { checkbox = b and true or false } end
 function N.num(n) return { number = n } end
 function N.select(name) return { select = name and { name = name } or rapidjson.null } end
+function N.status(name) return { status = { name = name } } end
+function N.multi(list)
+    local out = {}
+    for _i, n in ipairs(list or {}) do out[#out + 1] = { name = n } end
+    return { multi_select = out }
+end
+
 function N.date(start, finish)
     if not start then return { date = rapidjson.null } end
     return { date = { start = start, ["end"] = finish } }
@@ -126,6 +176,22 @@ function N.get(page, name)
     if t == "checkbox" then return p.checkbox == true end
     if t == "number" then return type(p.number) == "number" and p.number or nil end
     if t == "select" then return type(p.select) == "table" and p.select.name or nil end
+    if t == "status" then return type(p.status) == "table" and p.status.name or nil end
+    if t == "multi_select" then
+        local out = {}
+        for _i, o in ipairs(type(p.multi_select) == "table" and p.multi_select or {}) do out[#out + 1] = o.name end
+        return out
+    end
+    if t == "rollup" or t == "formula" then
+        local v = p[t]
+        if type(v) ~= "table" then return nil end
+        if v.type == "number" then return type(v.number) == "number" and v.number or nil end
+        if v.type == "string" then return type(v.string) == "string" and v.string or nil end
+        if v.type == "boolean" then return v.boolean == true end
+        if v.type == "array" and type(v.array) == "table" then return #v.array end
+        return nil
+    end
+    if t == "relation" then return type(p.relation) == "table" and #p.relation or 0 end
     if t == "date" then
         if type(p.date) ~= "table" then return nil end
         return { start = p.date.start, finish = type(p.date["end"]) == "string" and p.date["end"] or nil }

@@ -219,6 +219,15 @@ function Canvas:init()
     self:rebuild()
 end
 
+-- width of a string in design units (for right-aligned text)
+function Canvas:measure(str, kind, size, bold)
+    return TextWidget:new{ text = str, face = face(kind, size), bold = bold }:getSize().w / SX
+end
+
+function Canvas:rtext(str, kind, size, xr, y, color, bold)
+    return self:text(str, kind, size, xr - self:measure(str, kind, size, bold), y, color, bold)
+end
+
 function Canvas:put(w, x, y)
     w.overlap_offset = { px(x), py(y) }
     table.insert(self.items, w)
@@ -317,7 +326,8 @@ function Canvas:rebuild(refresh)
     self.night = G_reader_settings:isTrue("night_mode")
     self.texfg = self.night and BLACK or WHITE
     local bg = ({ home = "home", papers = "papers", subs = "substacks", library = "library",
-        today = "today", checkin = "checkin" })[self.mode] .. (self.night and "_night.png" or ".png")
+        today = "today", checkin = "checkin", log = "log", work = "work", week = "week", month = "month",
+        stats = "stats", focus = "focus" })[self.mode] .. (self.night and "_night.png" or ".png")
     if not exists(plugin_dir .. "/screens/" .. bg) then bg = bg:gsub("_night", "") end
     self:put(ImageWidget:new{ file = plugin_dir .. "/screens/" .. bg, width = Screen:getWidth(), height = Screen:getHeight(),
         file_do_cache = false, original_in_nightmode = true }, 0, 0)
@@ -326,6 +336,12 @@ function Canvas:rebuild(refresh)
     elseif self.mode == "library" then self:buildLibrary()
     elseif self.mode == "today" then self:buildToday()
     elseif self.mode == "checkin" then self:buildCheckin()
+    elseif self.mode == "log" then self:buildLog()
+    elseif self.mode == "work" then self:buildWork()
+    elseif self.mode == "week" then self:buildWeek()
+    elseif self.mode == "month" then self:buildMonth()
+    elseif self.mode == "stats" then self:buildStats()
+    elseif self.mode == "focus" then self:buildFocus()
     else self:buildSubs() end
     if self.drawHandle then self:drawHandle() end
     if self.control and self.drawControl then self:drawControl() end
@@ -344,7 +360,13 @@ function Canvas:go(mode)
         self:loadDash()
         return
     end
+    self.wsheet = nil
     self:rebuild("full")
+    if mode == "log" then
+        if self:logFresh() then self:syncReading() else self:loadLog() end
+    elseif mode == "work" and not self:workFresh() then self:loadWork()
+    elseif (mode == "week" or mode == "month" or mode == "stats") and self.loadPeriod then self:loadPeriod(mode)
+    elseif mode == "focus" and self.loadFocus then self:loadFocus() end
 end
 
 function Canvas:close()
@@ -421,7 +443,7 @@ function Canvas:buildHome()
 
     local soon = function() UIManager:show(InfoMessage:new{ text = _("Coming in the next update."), timeout = 3 }) end
     self:zone(L.dash, function() self:go("today") end)
-    self:zone(L.focus, soon)
+    self:zone(L.focus, function() self:go("focus") end)
     self:zone(L.papers, function() self:go("papers") end)
     self:zone(L.subs, function() self:go("subs") end)
     self:zone(L.library, function() self:go("library") end)
@@ -761,6 +783,13 @@ function SelfV2:init()
             online = function(cb) S.online(cb) end,
             greeting = S.greeting,
         })
+    end
+    if not Canvas.buildLog then
+        local ctx = { N = N, px = px, py = py, face = face, plugin_dir = self.path,
+            BLACK = BLACK, WHITE = WHITE, GREY = GREY, LIGHT = LIGHT, TRACK = Blitbuffer.Color8(0x4A),
+            online = function(cb) S.online(cb) end, sleepDir = function() return S.SLEEP_DIR end }
+        dofile(self.path .. "/logwork.lua")(Canvas, ctx)
+        dofile(self.path .. "/period.lua")(Canvas, ctx)
     end
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)

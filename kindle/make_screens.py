@@ -141,6 +141,28 @@ L = {
         "tea": (PAD, 764, 342, 150), "sleep": (386, 764, 342, 150),
         "save": (PAD, 930, 698, 54),
     },
+    "log": {
+        "date": (PAD, 16, 168, 40), "home": (632, 16, 96, 40), "nav": (PAD, 150, 698, 56), "tab_y": 155, "tab_h": 46,
+        "tiles_y": 220, "tile_h": 100, "form": (PAD, 444, 698, 494), "add": (PAD, 950, 698, 52),
+        "patch_food": (52, 494, 654, 96), "patch_read": (52, 494, 654, 150),
+    },
+    "work": {
+        "date": (PAD, 16, 168, 40), "home": (632, 16, 96, 40), "nav": (PAD, 150, 698, 56), "tab_y": 155, "tab_h": 46,
+        "next": (PAD, 218, 698, 172), "filters_y": 404, "cards_y": 460, "card_h": 104, "cards": 4, "new": (PAD, 950, 698, 52),
+    },
+    "week": {
+        "switch": (PAD, 16, 400, 44), "home": (632, 16, 96, 40), "nav": (PAD, 150, 698, 56), "tab_y": 155, "tab_h": 46,
+        "cw": (PAD, 218, 698, 330), "goals_y": 562, "goal_h": 82, "habits": (PAD, 658, 698, 346),
+    },
+    "month": {
+        "switch": (PAD, 16, 400, 44), "home": (632, 16, 96, 40), "nav": (PAD, 150, 698, 56), "tab_y": 155, "tab_h": 46,
+        "cal": (PAD, 218, 698, 372), "lect": (PAD, 604, 698, 272), "tiles_y": 890, "tile_h": 104,
+    },
+    "stats": {
+        "switch": (PAD, 16, 400, 44), "home": (632, 16, 96, 40), "nav": (PAD, 150, 698, 56), "tab_y": 155, "tab_h": 46,
+        "goals_y": 218, "goal_h": 106, "habits": (PAD, 336, 698, 296), "logs_y": 646, "log_h": 86, "money": (PAD, 746, 698, 258),
+    },
+    "focus": {"back": (PAD, 24, 120, 44), "grid": (PAD, 220, 698, 740), "foot_y": 978},
     "subs": {
         "back": (PAD, 20, 116, 40), "sub": (PAD, 128),
         "pick": (PAD, 166, 698, 150),
@@ -351,6 +373,78 @@ def bake_checkin():
     save(im, "checkin.png")
 
 
+def bake_log():
+    im = page()
+    l = L["log"]
+    d = ImageDraw.Draw(im)
+    d.text((PAD, 70), "Log", font=f(MARC, 42), fill=INK(17))
+    d.text((PAD, 122), "What are you logging?", font=f(SANS, 16), fill=INK(68))
+    nav_bar(im, l["nav"])
+    card(im, l["form"], 222)
+    save(im, "log.png")
+    # textured strips that sit inside the form card (food and reading)
+    for name, tex, rect, dk in [("patch_food", "leopard_s.jpg", l["patch_food"], 0.5), ("patch_read", "fawn_s.jpg", l["patch_read"], 0.52)]:
+        x, y, w, h = rect
+        base = Image.new("RGBA", (w, h), INK(248) if not NIGHT else (36, 36, 36, 255))
+        t = Image.open(ART / tex).convert("L")
+        sc = max(w / t.width, h / t.height)
+        t = t.resize((int(t.width * sc) + 1, int(t.height * sc) + 1)).crop((0, 0, w, h))
+        t = ImageEnhance.Brightness(t).enhance(dk * (0.8 if NIGHT else 1)).convert("RGBA")
+        base.paste(t, (0, 0), rmask(w, h, 20))
+        save(base, name + ".png")
+
+
+def bake_work():
+    im = page()
+    l = L["work"]
+    d = ImageDraw.Draw(im)
+    d.text((PAD, 70), "Work", font=f(MARC, 42), fill=INK(17))
+    d.text((PAD, 122), "On your desk", font=f(SANS, 16), fill=INK(68))
+    nav_bar(im, l["nav"])
+    textured(im, l["next"], "lace_s.jpg", 0.45, 26)
+    save(im, "work.png")
+
+
+def thirds(y, h, n=3, gap=12):
+    w = (698 - gap * (n - 1)) // n
+    return [(PAD + i * (w + gap), y, w, h) for i in range(n)]
+
+
+def bake_week():
+    im = page(); l = L["week"]
+    nav_bar(im, l["nav"]); card(im, l["cw"])
+    for r in thirds(l["goals_y"], l["goal_h"]): textured(im, r, "fawn_s.jpg", 0.58, 20)
+    card(im, l["habits"])
+    save(im, "week.png")
+
+
+def bake_month():
+    im = page(); l = L["month"]
+    nav_bar(im, l["nav"])
+    textured(im, l["cal"], "leopard_s.jpg", 0.6, 26)
+    card(im, l["lect"])
+    ts = thirds(l["tiles_y"], l["tile_h"], 4, 10)
+    for r in ts[:3]: card(im, r, r=20)
+    textured(im, ts[3], "fawn_s.jpg", 0.58, 20)
+    save(im, "month.png")
+
+
+def bake_stats():
+    im = page(); l = L["stats"]
+    nav_bar(im, l["nav"])
+    for r in thirds(l["goals_y"], l["goal_h"]): textured(im, r, "fawn_s.jpg", 0.58, 20)
+    card(im, l["habits"])
+    for r in thirds(l["logs_y"], l["log_h"], 5, 8): card(im, r, r=18)
+    card(im, l["money"])
+    save(im, "stats.png")
+
+
+def bake_focus():
+    im = Image.new("RGBA", (W, H))
+    textured(im, (0, 0, W, H), "lace_s.jpg", 0.45, 0)
+    save(im, "focus.png")
+
+
 def write_layout():
     def lua(v):
         if isinstance(v, dict):
@@ -371,6 +465,12 @@ if __name__ == "__main__":
         bake_library()
         bake_today()
         bake_checkin()
+        bake_log()
+        bake_work()
+        bake_week()
+        bake_month()
+        bake_stats()
+        bake_focus()
     NIGHT = False
     write_layout()
     fonts = PLUGIN / "fonts"

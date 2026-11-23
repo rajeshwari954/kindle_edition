@@ -38,7 +38,7 @@ function Canvas:centerText(str, kind, size, x, y, w, h, color, bold)
     self:put(CenterContainer:new{ dimen = Geom:new{ w = px(w), h = py(h) }, tw }, x, y)
 end
 
-local TABS = { { "Today", "today" }, { "Check-in", "checkin" }, { "Log" }, { "Week" }, { "Work" } }
+local TABS = { { "Today", "today" }, { "Check-in", "checkin" }, { "Log", "log" }, { "Week", "week" }, { "Work", "work" } }
 
 function Canvas:navBar(active, L)
     local x0, w = L.nav[1] + 5, (L.nav[3] - 10 - 16) / 5
@@ -52,7 +52,7 @@ function Canvas:navBar(active, L)
         end
         self:zone({ x, L.tab_y - 4, w, L.tab_h + 8 }, function()
             if t[2] then
-                if t[2] ~= self.mode then self:go(t[2]) end
+                if t[2] ~= self.mode then self.ddate = self.ddate; self:go(t[2]) end
             else
                 UIManager:show(InfoMessage:new{ text = t[1] .. " is coming in the next update.", timeout = 3 })
             end
@@ -85,9 +85,8 @@ function Canvas:pickDate()
     local function go(date)
         UIManager:close(dlg)
         self.ddate = date
-        self.dash, self.sheet = nil, nil
-        self:rebuild("full")
-        self:loadDash()
+        self.dash, self.sheet, self.logd, self.periodd = nil, nil, nil, nil
+        self:go(self.mode)
     end
     local today = N.today()
     dlg = ButtonDialog:new{
@@ -251,7 +250,7 @@ function Canvas:buildToday()
     local hr = tonumber(os.date("%H"))
     self:text(ctx.greeting and ctx.greeting() or "HELLO,", "sans", 15, L.label[1], L.label[2], GREY, true)
     self:pill("Focus board", L.focus[1], L.focus[2], L.focus[4], "dark", 15, L.focus[3])
-    self:zone(L.focus, function() UIManager:show(InfoMessage:new{ text = _("The Focus board is coming in a later update."), timeout = 3 }) end)
+    self:zone(L.focus, function() self:go("focus") end)
     self:datePill(L.date[1], L.date[2], L.date[3], L.date[4])
     self:homePill(L.home)
     self:navBar("today", L)
