@@ -1,0 +1,64 @@
+# Daily reads for Rajeshwari's Kindle.
+# Edit this file to change papers, sections or Substacks. Changes apply from the next morning's build.
+
+timezone: Asia/Kolkata
+lookback_hours: 26          # how far back each morning's build looks for new stories
+summary_model: claude-haiku-5-5
+
+papers:
+  - id: toi
+    name: The Times of India
+    subtitle: Mumbai edition
+    texture: cow
+    per_section: 8
+    tags: [Mumbai, India, World, Business, Sports]
+    sections:
+      - { name: Top stories, url: "https://timesofindia.indiatimes.com/rssfeedstopstories.cms" }
+      - { name: Mumbai,      url: "https://timesofindia.indiatimes.com/rssfeeds/-2128838597.cms" }
+      - { name: India,       url: "https://timesofindia.indiatimes.com/rssfeeds/-2128936835.cms" }
+      - { name: World,       url: "https://timesofindia.indiatimes.com/rssfeeds/296589292.cms" }
+      - { name: Business,    url: "https://timesofindia.indiatimes.com/rssfeeds/1898055.cms" }
+
+  - id: hindu
+    name: The Hindu
+    subtitle: National edition
+    texture: zebra
+    per_section: 8
+    tags: [National, International, Economy, Opinion, Science]
+    sections:
+      - { name: National,      url: "https://www.thehindu.com/news/national/feeder/default.rss" }
+      - { name: International, url: "https://www.thehindu.com/news/international/feeder/default.rss" }
+      - { name: Editorial,     url: "https://www.thehindu.com/opinion/editorial/feeder/default.rss" }
+      - { name: Economy,       url: "https://www.thehindu.com/business/Economy/feeder/default.rss" }
+      - { name: Science,       url: "https://www.thehindu.com/sci-tech/science/feeder/default.rss" }
+
+  - id: et
+    name: The Economic Times
+    subtitle: Markets & policy
+    texture: fawn
+    per_section: 8
+    tags: [Economy, Markets, Policy, Companies, Tech]
+    sections:
+      - { name: Top stories, url: "https://economictimes.indiatimes.com/rssfeedstopstories.cms" }
+      - { name: Markets,     url: "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms" }
+      - { name: News,        url: "https://economictimes.indiatimes.com/news/rssfeeds/1715249553.cms" }
+      - { name: Industry,    url: "https://economictimes.indiatimes.com/industry/rssfeeds/13352306.cms" }
+      - { name: Tech,        url: "https://economictimes.indiatimes.com/tech/rssfeeds/13357270.cms" }
+
+  - id: livelaw
+    name: LiveLaw
+    subtitle: Last 24 hours
+    texture: leopard
+    per_section: 25
+    tags: [Supreme Court, Bombay HC, Other HCs, Arbitration, Top stories]
+    focus: >-
+      Prefer Supreme Court and Bombay High Court judgments, then arbitration
+      (Arbitration and Conciliation Act), civil, property, co-operative and RERA matters.
+    sections:
+      - { name: Latest, url: "https://www.livelaw.in/google_feeds.xml" }
+
+# Add each Substack you follow. area = the Reading Log area its posts are filed under.
+substacks:
+  texture: lace
+  feeds: []
+  # - { name: "Example", url: "https://example.substack.com/feed", area: "Finance & Economics" }

@@ -1,0 +1,48 @@
+name: Morning edition
+
+on:
+  schedule:
+    - cron: "23 0 * * *"   # 05:53 IST every day
+  workflow_dispatch: {}     # "Run workflow" button for a manual build
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Build editions
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          EDITION_KEY: ${{ secrets.EDITION_KEY }}
+        run: |
+          test -n "$EDITION_KEY" || { echo "Add the EDITION_KEY secret first"; exit 1; }
+          python build.py --out "site/$EDITION_KEY"
+          printf 'User-agent: *\nDisallow: /\n' > site/robots.txt
+          echo '<!doctype html><title>.</title>' > site/index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
