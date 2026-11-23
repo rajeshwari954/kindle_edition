@@ -127,8 +127,12 @@ def substack_follows(subs, model):
         r.raise_for_status()
         data = r.json()
     except Exception as e:
-        print(f"  ! couldn't read Substack follows for {profile}: {e}", file=sys.stderr)
-        return []
+        # Substack doesn't always answer cloud servers; use the saved list in config.yaml instead
+        print(f"  ! couldn't read Substack follows for {profile} ({e}); using the saved list", file=sys.stderr)
+        names = subs.get("names") or {}
+        skip = set(subs.get("exclude") or [])
+        return [{"name": names.get(sub, sub), "url": f"https://{sub}.substack.com/feed", "sub": sub, "area": area}
+                for sub, area in (subs.get("areas") or {}).items() if sub not in skip]
     exclude = set(subs.get("exclude") or [])
     areas = subs.get("areas") or {}
     out = []

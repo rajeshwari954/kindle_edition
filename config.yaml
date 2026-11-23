@@ -77,4 +77,17 @@ substacks:
     quiethustle2: Philosophy & Psychology
     rajshamani: Finance & Economics
     stoicmanual: Philosophy & Psychology
+  names:                     # display names, used when Substack can't be reached
+    theartofbranding: The Art of Branding
+    bhagavadgitadaily: Bhagavad Gita Daily
+    mauvesailor: cigarette break
+    thedailybriefing: The Daily Brief by Zerodha
+    fiveminutereads1: Five Minute Reads
+    bariweiss: The Free Press
+    indiangeopolitics: Indian Geo Politics
+    themuseandthemelody: The Muse & The Melody
+    pibindia: People, Policies, Progress
+    quiethustle2: Quiet Hustle
+    rajshamani: Raj Shamani
+    stoicmanual: The Stoic Manual
   feeds: []                  # extra feeds not on Substack: - { name: "X", url: "https://…/feed", area: "…" }
