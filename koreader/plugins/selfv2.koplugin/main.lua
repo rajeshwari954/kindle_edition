@@ -39,6 +39,7 @@ local GREY = Blitbuffer.Color8(0x55)
 local LIGHT = Blitbuffer.Color8(0xE6)
 
 local shown_at_launch = false
+local force_home = false  -- set by the Home button inside a book
 
 ---------------------------------------------------------------- helpers
 
@@ -481,13 +482,85 @@ function SelfV2:init()
     self.layout = dofile(self.path .. "/layout.lua")
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
-    -- Open Home when KOReader starts, and when you come back to the file browser from a book.
-    if not self.ui.document and G_reader_settings:nilOrTrue("selfv2_home_on_start") then
-        local first = not shown_at_launch
-        shown_at_launch = true
-        if first or G_reader_settings:nilOrTrue("selfv2_home_after_book") then
-            UIManager:nextTick(function() self:showHome() end)
-        end
+    if self.ui.document then
+        -- inside a book, PDF or paper: show the Back / Home buttons
+        self:addReaderButtons()
+        return
+    end
+    -- Open Home when KOReader starts, when you come back to the file browser from a book,
+    -- and always after tapping Home inside a book.
+    local first = not shown_at_launch
+    shown_at_launch = true
+    local want = force_home
+        or (G_reader_settings:nilOrTrue("selfv2_home_on_start") and (first or G_reader_settings:nilOrTrue("selfv2_home_after_book")))
+    force_home = false
+    if want then
+        UIManager:nextTick(function() self:showHome() end)
+    end
+end
+
+---------------------------------------------------------------- Back / Home buttons in the reader
+
+function SelfV2:addReaderButtons()
+    if not G_reader_settings:nilOrTrue("selfv2_reader_buttons") then return end
+    local view = self.view or self.ui.view
+    if not view or not view.registerViewModule then return end
+    setScale()
+    local H = py(36)
+    local function btn(label, w)
+        return FrameContainer:new{
+            background = WHITE, bordersize = 2, color = BLACK, radius = math.floor(H / 2), padding = 0, margin = 0,
+            CenterContainer:new{ dimen = Geom:new{ w = px(w), h = H - 4 }, TextWidget:new{ text = label, face = face("sans", 14), bold = true } },
+        }
+    end
+    local back, home = btn("‹ Back", 84), btn("Home", 74)
+    local bottom = G_reader_settings:isTrue("selfv2_buttons_bottom")
+    local y = bottom and (Screen:getHeight() - H - py(34)) or py(6)
+    local bw, hw = px(84) + 4, px(74) + 4
+    local bx = px(10)
+    local hx = bx + bw + px(8)
+    local module = Widget:new{ dimen = Geom:new{ w = 0, h = 0 } }
+    module.paintTo = function(_m, bb, x, y0)
+        back:paintTo(bb, x + bx, y0 + y)
+        home:paintTo(bb, x + hx, y0 + y)
+    end
+    view:registerViewModule("selfv2_nav", module)
+
+    local W, Hs = Screen:getWidth(), Screen:getHeight()
+    local pad = px(6) -- a little extra room around each button so taps land easily
+    local function zone(x, w)
+        return { ratio_x = (x - pad) / W, ratio_y = (y - pad) / Hs, ratio_w = (w + 2 * pad) / W, ratio_h = (H + 2 * pad) / Hs }
+    end
+    local overrides = { "tap_forward", "tap_backward", "readerconfigmenu_tap", "readerconfigmenu_ext_tap",
+        "readermenu_tap", "readermenu_ext_tap", "tap_top_left_corner", "tap_top_right_corner",
+        "tap_left_bottom_corner", "tap_right_bottom_corner", "readerfooter_tap", "readerhighlight_tap", "tap_link" }
+    self.ui:registerTouchZones({
+        { id = "selfv2_back", ges = "tap", screen_zone = zone(bx, bw), overrides = overrides,
+          handler = function() self:readerBack() return true end },
+        { id = "selfv2_home", ges = "tap", screen_zone = zone(hx, hw), overrides = overrides,
+          handler = function() self:readerHome() return true end },
+    })
+end
+
+-- Back: return to where a link took you from (e.g. the newspaper's front page);
+-- if you didn't arrive by a link, close the book and go back to Home.
+function SelfV2:readerBack()
+    local link = self.ui.link
+    if link and link.location_stack and #link.location_stack > 0 and link.onGoBackLink then
+        link:onGoBackLink()
+    else
+        self:readerHome()
+    end
+end
+
+function SelfV2:readerHome()
+    force_home = true
+    if self.ui.onHome then
+        self.ui:onHome()
+    else
+        self.ui:onClose()
+        local FileManager = require("apps/filemanager/filemanager")
+        FileManager:showFiles()
     end
 end
 
@@ -631,6 +704,18 @@ function SelfV2:addToMainMenu(menu_items)
                 text = _("Open Home when KOReader starts"),
                 checked_func = function() return G_reader_settings:nilOrTrue("selfv2_home_on_start") end,
                 callback = function() G_reader_settings:flipNilOrTrue("selfv2_home_on_start") end,
+            },
+            {
+                text = _("Back & Home buttons in books"),
+                checked_func = function() return G_reader_settings:nilOrTrue("selfv2_reader_buttons") end,
+                callback = function() G_reader_settings:flipNilOrTrue("selfv2_reader_buttons") end,
+                help_text = _("Takes effect the next time you open a book."),
+            },
+            {
+                text = _("Put the buttons at the bottom of the page"),
+                checked_func = function() return G_reader_settings:isTrue("selfv2_buttons_bottom") end,
+                callback = function() G_reader_settings:flipNilOrFalse("selfv2_buttons_bottom") end,
+                help_text = _("Takes effect the next time you open a book."),
             },
             {
                 text = _("Show Home after closing a book"),
