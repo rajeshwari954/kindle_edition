@@ -242,8 +242,14 @@ function Canvas:rebuild(refresh)
     self.items, self.zones = {}, {}
     self.L = self.plugin.layout
     self.manifest = readJSON(FOLDER .. "/today.json")
-    local bg = ({ home = "home.png", papers = "papers.png", subs = "substacks.png" })[self.mode]
-    self:put(ImageWidget:new{ file = plugin_dir .. "/screens/" .. bg, width = Screen:getWidth(), height = Screen:getHeight(), file_do_cache = false }, 0, 0)
+    -- Night mode: KOReader reverses the whole screen except pictures. So use the dark artwork
+    -- (shown as-is), and draw text that sits on a texture in black, which night mode turns white.
+    self.night = G_reader_settings:isTrue("night_mode")
+    self.texfg = self.night and BLACK or WHITE
+    local bg = ({ home = "home", papers = "papers", subs = "substacks" })[self.mode] .. (self.night and "_night.png" or ".png")
+    if not exists(plugin_dir .. "/screens/" .. bg) then bg = bg:gsub("_night", "") end
+    self:put(ImageWidget:new{ file = plugin_dir .. "/screens/" .. bg, width = Screen:getWidth(), height = Screen:getHeight(),
+        file_do_cache = false, original_in_nightmode = true }, 0, 0)
     if self.mode == "home" then self:buildHome()
     elseif self.mode == "papers" then self:buildPapers()
     else self:buildSubs() end
@@ -322,13 +328,13 @@ function Canvas:buildHome()
     else
         self:pill("Download", p[1] + p[3] - 110, p[2] + 16, 30, "light", 13, 90)
     end
-    self:text(self:isToday() and todayLabel() or "Not downloaded yet", "sans", 14, p[1] + 20, p[2] + p[4] - 32, WHITE)
+    self:text(self:isToday() and todayLabel() or "Not downloaded yet", "sans", 14, p[1] + 20, p[2] + p[4] - 32, self.texfg)
     local s = L.subs
     if subs and self:isToday() then
         self:pill((subs.count or 0) .. " new", s[1] + s[3] - 110, s[2] + 16, 30, "light", 13, 90)
-        self:text("New posts from your reads", "sans", 14, s[1] + 20, s[2] + s[4] - 32, WHITE)
+        self:text("New posts from your reads", "sans", 14, s[1] + 20, s[2] + s[4] - 32, self.texfg)
     else
-        self:text("Nothing new yet", "sans", 14, s[1] + 20, s[2] + s[4] - 32, WHITE)
+        self:text("Nothing new yet", "sans", 14, s[1] + 20, s[2] + s[4] - 32, self.texfg)
     end
 
     local soon = function() UIManager:show(InfoMessage:new{ text = _("Coming in the next update."), timeout = 3 }) end
@@ -431,7 +437,7 @@ function Canvas:buildSubs()
     local L = self.L.subs
     self:zone(L.back, function() self:go("home") end)
     local nfollow = #(self.manifest and self.manifest.substack_following or {})
-    self:pill("Following · " .. nfollow, 548, 126, 32, "outline", 13, 150)
+    self:pill("Following · " .. nfollow, 548, 130, 30, "outline", 13, 150)
     self:zone({ 548, 120, 160, 44 }, function() self:showFollowing() end)
     local d = self:isToday() and self:files("substacks")[1] or nil
     local posts = d and d.posts or {}
@@ -441,7 +447,7 @@ function Canvas:buildSubs()
 
     if #posts == 0 then
         self:text("No new posts today", "sans", 16, L.sub[1], L.sub[2], GREY)
-        self:lines("Nothing new yet", "serif", 26, pk[1] + 22, pk[2] + 60, 640, 1, WHITE)
+        self:lines("Nothing new yet", "serif", 26, pk[1] + 22, pk[2] + 60, 640, 1, self.texfg)
         self:lines("New posts from the Substacks you follow arrive with the morning papers. Tap Following to see the list.", "sans", 17, 52, L.rows_y + 10, 620, 4, GREY, 26)
         return
     end
@@ -459,9 +465,9 @@ function Canvas:buildSubs()
     local pi = 1
     for i, _p in ipairs(posts) do if not st[date .. "/sub" .. i] then pi = i break end end
     local p = posts[pi]
-    self:text((p.pub or "") .. " · " .. (p.mins or 1) .. " min", "sans", 14, pk[1] + 200, pk[2] + 20, WHITE)
-    self:lines(p.title or "", "serif", 24, pk[1] + 22, pk[2] + 54, 650, 1, WHITE)
-    self:lines(p.summary or "", "sans", 15, pk[1] + 22, pk[2] + 92, 650, 2, WHITE, 22)
+    self:text((p.pub or "") .. " · " .. (p.mins or 1) .. " min", "sans", 14, pk[1] + 200, pk[2] + 20, self.texfg)
+    self:lines(p.title or "", "serif", 24, pk[1] + 22, pk[2] + 54, 650, 1, self.texfg)
+    self:lines(p.summary or "", "sans", 15, pk[1] + 22, pk[2] + 92, 650, 2, self.texfg, 22)
     self:zone(pk, function() open(pi) end)
 
     local per = L.rows
@@ -514,6 +520,24 @@ function SelfV2:init()
     force_home = false
     if want then
         UIManager:nextTick(function() self:showHome() end)
+    end
+    UIManager:nextTick(function() self:hookFileBrowser() end)
+end
+
+-- In the file browser (Library), the house icon at the top left goes back to self.v2 Home.
+-- Holding it still opens your home folder, as KOReader normally does.
+function SelfV2:hookFileBrowser()
+    local tb = self.ui and self.ui.title_bar
+    if not tb then return end
+    local original = tb.left_icon_tap_callback
+    local cb = function() self:showHome() end
+    tb.left_icon_tap_callback = cb
+    if tb.left_button then
+        tb.left_button.callback = cb
+        if original then
+            tb.left_button.hold_callback = original
+            tb.left_icon_hold_callback = original
+        end
     end
 end
 
@@ -584,6 +608,12 @@ end
 
 function SelfV2:onDispatcherRegisterActions()
     Dispatcher:registerAction("selfv2_home", { category = "none", event = "SelfV2Home", title = _("self.v2 Home"), general = true })
+end
+
+function SelfV2:onToggleNightMode()
+    if self.canvas and self.canvas.is_open then
+        UIManager:scheduleIn(0.2, function() self.canvas:rebuild("full") end)
+    end
 end
 
 function SelfV2:onSelfV2Home()
