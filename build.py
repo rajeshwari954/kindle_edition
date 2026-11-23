@@ -139,7 +139,10 @@ def pick_highlights(paper, stories, model):
         msg = anthropic.Anthropic(api_key=key).messages.create(
             model=model, max_tokens=900, messages=[{"role": "user", "content": prompt}])
         txt = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
-        picks = json.loads(re.search(r"\{.*\}", txt, re.S).group(0))["picks"]
+        m = re.search(r"\{.*\}", txt, re.S)
+        if not m:
+            raise ValueError(f"no JSON (stop={msg.stop_reason}, blocks={[b.type for b in msg.content]}): {txt[:300]!r}")
+        picks = json.loads(m.group(0))["picks"]
         picks = [p for p in picks if isinstance(p.get("i"), int) and 0 <= p["i"] < len(stories)][:5]
         return picks or fallback
     except Exception as e:
