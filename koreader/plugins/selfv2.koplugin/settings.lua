@@ -113,6 +113,13 @@ local function sleepImages()
     return out
 end
 
+-- Your sleep screen image (the first one in the linkss folder), used behind the passcode keypad.
+function M.lockImage()
+    local imgs = sleepImages()
+    table.sort(imgs)
+    return imgs[1] and (M.SLEEP_DIR .. "/" .. imgs[1]) or nil
+end
+
 -- Show the lock screen image(s) from the linkss folder when the Kindle sleeps from KOReader.
 function M.useLockImage(quiet)
     local imgs = sleepImages()

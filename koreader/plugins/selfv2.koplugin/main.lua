@@ -226,29 +226,28 @@ local KEYS = { { "1", "" }, { "2", "A B C" }, { "3", "D E F" }, { "4", "G H I" }
 
 function Canvas:buildPin()
     local o = self.pin
-    local fg = self.texfg
-    local inv = self.night and WHITE or BLACK
-    local function ctext(str, kind, size, y, bold) self:centerText(str, kind, size, 0, y, 758, size * 1.6, fg, bold) end
-    ctext(os.date("%H:%M"), "sans", 18, 26, true)
-    -- a small padlock
-    self:box(366, 92, 26, 22, fg, 5)
-    self:box(371, 78, 16, 22, nil, 8, 3, fg)
-    ctext(o.message or o.title, "sans", 24, 140, false)
-    if o.sub then ctext(o.sub, "sans", 15, 180, false) end
+    -- solid white card and keys so they read clearly over any sleep-screen picture
+    self:box(219, 22, 320, 238, WHITE, 28)
+    local function ctext(str, kind, size, y, bold) self:centerText(str, kind, size, 219, y, 320, size * 1.6, BLACK, bold) end
+    ctext(os.date("%H:%M"), "sans", 16, 34, true)
+    self:box(366, 78, 26, 22, BLACK, 5)
+    self:box(371, 64, 16, 22, nil, 8, 3, BLACK)
+    ctext(o.message or o.title, "sans", 20, 112, o.message ~= nil)
+    if o.sub then ctext(o.sub, "sans", 14, 146, false) end
 
     -- dots
     local n = o.length or math.max(4, #o.code)
-    local dw, gap = 18, 22
+    local dw, gap = 18, 18
     local x0 = (758 - (n * dw + (n - 1) * gap)) / 2
     for i = 1, n do
         local x = x0 + (i - 1) * (dw + gap)
-        if i <= #o.code then self:box(x, 222, dw, dw, fg, dw / 2)
-        else self:box(x, 222, dw, dw, nil, dw / 2, 2, fg) end
+        if i <= #o.code then self:box(x, 190, dw, dw, BLACK, dw / 2)
+        else self:box(x, 190, dw, dw, nil, dw / 2, 2, BLACK) end
     end
     if not o.length and #o.code > 0 then
         local w = 120
-        self:pill("OK", (758 - w) / 2, 256, 40, "light", 16, w)
-        self:zone({ (758 - w) / 2 - 10, 250, w + 20, 52 }, function() self:pinSubmit() end)
+        self:pill("OK", (758 - w) / 2, 274, 40, "dark", 16, w)
+        self:zone({ (758 - w) / 2 - 10, 268, w + 20, 52 }, function() self:pinSubmit() end)
     end
 
     -- keypad: 1-9, then 0
@@ -256,30 +255,33 @@ function Canvas:buildPin()
     local cx = { 219, 379, 539 }
     local cy = { 400, 548, 696, 844 }
     local function key(label, letters, x, y)
-        self:box(x - d / 2, y - d / 2, d, d, nil, d / 2, 2, fg)
-        self:centerText(label, "sans", 40, x - d / 2, y - d / 2 + (letters ~= "" and 14 or 26), d, 56, fg, false)
-        if letters ~= "" then self:centerText(letters, "sans", 11, x - d / 2, y + 22, d, 20, fg, true) end
+        self:box(x - d / 2, y - d / 2, d, d, WHITE, d / 2, 2, BLACK)
+        self:centerText(label, "sans", 40, x - d / 2, y - d / 2 + (letters ~= "" and 14 or 26), d, 56, BLACK, false)
+        if letters ~= "" then self:centerText(letters, "sans", 11, x - d / 2, y + 22, d, 20, BLACK, true) end
         self:zone({ x - d / 2, y - d / 2, d, d }, function() self:pinDigit(label) end)
     end
     for i, k in ipairs(KEYS) do
         key(k[1], k[2], cx[(i - 1) % 3 + 1], cy[math.floor((i - 1) / 3) + 1])
     end
     key("0", "", cx[2], cy[4])
+    local function word(label, x, cb)
+        self:pill(label, x - 64, cy[4] - 24, 48, "light", 17, 128)
+        self:zone({ x - 80, cy[4] - 50, 160, 100 }, cb)
+    end
     if o.allow_cancel then
-        self:centerText("Cancel", "sans", 19, cx[1] - 80, cy[4] - 20, 160, 40, fg, false)
-        self:zone({ cx[1] - 80, cy[4] - 50, 160, 100 }, function() self:pinClose(); if o.on_cancel then o.on_cancel() end end)
+        word("Cancel", cx[1], function() self:pinClose(); if o.on_cancel then o.on_cancel() end end)
     end
     if #o.code > 0 then
-        self:centerText("Delete", "sans", 19, cx[3] - 80, cy[4] - 20, 160, 40, fg, false)
-        self:zone({ cx[3] - 80, cy[4] - 50, 160, 100 }, function()
+        word("Delete", cx[3], function()
             o.code = o.code:sub(1, -2)
             o.message = nil
             self:rebuild("fast")
         end)
     end
     if o.option then
-        self:centerText(o.option[1], "sans", 15, 0, 950, 758, 30, fg, true)
-        self:zone({ 200, 940, 358, 50 }, function() o.code = ""; o.option[2](o); self:rebuild("ui") end)
+        local w = 260
+        self:pill(o.option[1], (758 - w) / 2, 940, 44, "light", 15, w)
+        self:zone({ (758 - w) / 2, 934, w, 56 }, function() o.code = ""; o.option[2](o); self:rebuild("ui") end)
     end
 end
 
@@ -451,7 +453,13 @@ function Canvas:rebuild(refresh)
         today = "today", checkin = "checkin", log = "log", work = "work", week = "week", month = "month",
         stats = "stats", focus = "focus", pin = "pin" })[self.mode] .. (self.night and "_night.png" or ".png")
     if not exists(plugin_dir .. "/screens/" .. bg) then bg = bg:gsub("_night", "") end
-    self:put(ImageWidget:new{ file = plugin_dir .. "/screens/" .. bg, width = Screen:getWidth(), height = Screen:getHeight(),
+    local bgfile = plugin_dir .. "/screens/" .. bg
+    if self.mode == "pin" and S.lockImage then
+        -- the passcode keypad sits on your sleep screen image
+        local li = S.lockImage()
+        if li and exists(li) then bgfile = li end
+    end
+    self:put(ImageWidget:new{ file = bgfile, width = Screen:getWidth(), height = Screen:getHeight(),
         file_do_cache = false, original_in_nightmode = true }, 0, 0)
     if self.mode == "home" then self:buildHome()
     elseif self.mode == "papers" then self:buildPapers()
