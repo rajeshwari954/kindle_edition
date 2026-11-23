@@ -213,7 +213,15 @@ end
 
 function M.hasPin() return G_reader_settings:readSetting("selfv2_pin") ~= nil end
 
-local function askPin(title, cb, allow_cancel)
+local function pinLen() return G_reader_settings:readSetting("selfv2_pin_len") end
+local function pinOk(v) return hash(v) == G_reader_settings:readSetting("selfv2_pin") end
+
+-- the keypad when it's available (it's drawn by main.lua), the plain number box otherwise
+local function askPin(title, cb, allow_cancel, length)
+    if M.pinPad then
+        return M.pinPad{ title = title, length = length, allow_cancel = allow_cancel,
+            on_code = function(v, pad) cb(v, pad) end }
+    end
     local InputDialog = require("ui/widget/inputdialog")
     local dlg
     local buttons = {}
@@ -221,13 +229,17 @@ local function askPin(title, cb, allow_cancel)
         table.insert(buttons, { text = _("Cancel"), id = "close", callback = function() UIManager:close(dlg) end })
     end
     table.insert(buttons, { text = _("OK"), is_enter_default = true, callback = function()
-        local v = dlg:getInputText() or ""
-        cb(v, dlg)
+        cb(dlg:getInputText() or "", dlg)
     end })
     dlg = InputDialog:new{ title = title, input = "", input_type = "number", text_type = "password", buttons = { buttons } }
     UIManager:show(dlg)
     dlg:onShowKeyboard()
     return dlg
+end
+
+local function closePad(d) if d and d.pinClose then d:pinClose() else UIManager:close(d) end end
+local function retry(d, msg)
+    if d and d.pinRetry then d:pinRetry(msg) else UIManager:close(d); UIManager:show(InfoMessage:new{ text = msg, timeout = 2 }) end
 end
 
 function M.pinMenu()
@@ -238,15 +250,16 @@ function M.pinMenu()
         table.insert(rows, { { text = _("Change passcode"), callback = function() close(); M.setPin(true) end } })
         table.insert(rows, { { text = _("Turn passcode off"), callback = function()
             close()
-            askPin(_("Enter your current passcode"), function(v, d)
-                UIManager:close(d)
-                if hash(v) == G_reader_settings:readSetting("selfv2_pin") then
+            askPin(_("Enter Passcode"), function(v, d)
+                if pinOk(v) then
+                    closePad(d)
                     G_reader_settings:delSetting("selfv2_pin")
+                    G_reader_settings:delSetting("selfv2_pin_len")
                     UIManager:show(InfoMessage:new{ text = _("Passcode turned off."), timeout = 2 })
                 else
-                    UIManager:show(InfoMessage:new{ text = _("That passcode isn't right."), timeout = 2 })
+                    retry(d, _("Wrong Passcode"))
                 end
-            end, true)
+            end, true, pinLen())
         end } })
     else
         table.insert(rows, { { text = _("Set a passcode"), callback = function() close(); M.setPin(false) end } })
@@ -260,8 +273,38 @@ function M.pinMenu()
     UIManager:show(dlg)
 end
 
+-- New passcode: 6 digits by default (tap "Use a 4-digit code" to switch), then type it again.
+local function newPin(pad)
+    local len = 6
+    local function first_step()
+        return { title = _("Enter a new passcode"), length = len, allow_cancel = true,
+            option = { len == 6 and _("Use a 4-digit code") or _("Use a 6-digit code"), function(o)
+                len = (len == 6) and 4 or 6
+                local nxt = first_step()
+                for k, v in pairs(nxt) do o[k] = v end
+            end },
+            on_code = function(first, p)
+                p:pinNext{ title = _("Re-enter your new passcode"), length = len, allow_cancel = true,
+                    on_code = function(second, p2)
+                        if second == first then
+                            G_reader_settings:saveSetting("selfv2_pin", hash(first))
+                            G_reader_settings:saveSetting("selfv2_pin_len", len)
+                            p2:pinClose()
+                            UIManager:show(InfoMessage:new{ text = _("Passcode set."), timeout = 2 })
+                        else
+                            p2:pinNext(first_step())
+                            p2.pin.message = _("Passcodes didn't match. Try again")
+                            p2:rebuild("ui")
+                        end
+                    end }
+            end }
+    end
+    if pad then pad:pinNext(first_step()) else M.pinPad(first_step()) end
+end
+
 function M.setPin(changing)
-    local function choose()
+    if not M.pinPad then
+        -- fallback: plain number boxes
         askPin(_("Choose a passcode (4–8 digits)"), function(first, d1)
             if not first:match("^%d%d%d%d%d?%d?%d?%d?$") then
                 UIManager:show(InfoMessage:new{ text = _("Use 4 to 8 digits."), timeout = 2 })
@@ -272,25 +315,25 @@ function M.setPin(changing)
                 UIManager:close(d2)
                 if second == first then
                     G_reader_settings:saveSetting("selfv2_pin", hash(first))
+                    G_reader_settings:saveSetting("selfv2_pin_len", #first)
                     UIManager:show(InfoMessage:new{ text = _("Passcode set."), timeout = 2 })
                 else
                     UIManager:show(InfoMessage:new{ text = _("Those didn't match. Try again."), timeout = 2 })
                 end
             end, true)
         end, true)
+        return
     end
     if changing then
-        askPin(_("Enter your current passcode"), function(v, d)
-            UIManager:close(d)
-            if hash(v) == G_reader_settings:readSetting("selfv2_pin") then choose()
-            else UIManager:show(InfoMessage:new{ text = _("That passcode isn't right."), timeout = 2 }) end
-        end, true)
+        askPin(_("Enter your old passcode"), function(v, d)
+            if pinOk(v) then newPin(d) else retry(d, _("Wrong Passcode")) end
+        end, true, pinLen())
     else
-        choose()
+        newPin(nil)
     end
 end
 
--- A blank cover so nothing on screen shows while locked, with the passcode box on top.
+-- A blank cover so nothing on screen shows while locked (used only if the keypad isn't available).
 local Cover = InputContainer:extend{ name = "selfv2_lock", covers_fullscreen = true, modal = true }
 function Cover:init()
     self.dimen = Geom:new{ x = 0, y = 0, w = Screen:getWidth(), h = Screen:getHeight() }
@@ -302,11 +345,20 @@ local locked = false
 function M.lock()
     if locked or not M.hasPin() then return end
     locked = true
+    if M.pinPad then
+        -- the keypad covers the whole screen; it only closes with the right passcode
+        M.pinPad{ title = _("Enter Passcode"), length = pinLen(), allow_cancel = false,
+            on_code = function(v, pad)
+                if pinOk(v) then pad:pinClose(); locked = false
+                else pad:pinRetry(_("Wrong Passcode")) end
+            end }
+        return
+    end
     local cover = Cover:new{}
     UIManager:show(cover, "full")
     local function ask()
         askPin(_("Passcode"), function(v, d)
-            if hash(v) == G_reader_settings:readSetting("selfv2_pin") then
+            if pinOk(v) then
                 UIManager:close(d)
                 UIManager:close(cover, "full")
                 locked = false

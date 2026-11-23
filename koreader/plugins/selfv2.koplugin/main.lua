@@ -219,6 +219,118 @@ function Canvas:init()
     self:rebuild()
 end
 
+---------------------------------------------------------------- passcode keypad (iPhone style)
+
+local KEYS = { { "1", "" }, { "2", "A B C" }, { "3", "D E F" }, { "4", "G H I" }, { "5", "J K L" }, { "6", "M N O" },
+    { "7", "P Q R S" }, { "8", "T U V" }, { "9", "W X Y Z" } }
+
+function Canvas:buildPin()
+    local o = self.pin
+    local fg = self.texfg
+    local inv = self.night and WHITE or BLACK
+    local function ctext(str, kind, size, y, bold) self:centerText(str, kind, size, 0, y, 758, size * 1.6, fg, bold) end
+    ctext(os.date("%H:%M"), "sans", 18, 26, true)
+    -- a small padlock
+    self:box(366, 92, 26, 22, fg, 5)
+    self:box(371, 78, 16, 22, nil, 8, 3, fg)
+    ctext(o.message or o.title, "sans", 24, 140, false)
+    if o.sub then ctext(o.sub, "sans", 15, 180, false) end
+
+    -- dots
+    local n = o.length or math.max(4, #o.code)
+    local dw, gap = 18, 22
+    local x0 = (758 - (n * dw + (n - 1) * gap)) / 2
+    for i = 1, n do
+        local x = x0 + (i - 1) * (dw + gap)
+        if i <= #o.code then self:box(x, 222, dw, dw, fg, dw / 2)
+        else self:box(x, 222, dw, dw, nil, dw / 2, 2, fg) end
+    end
+    if not o.length and #o.code > 0 then
+        local w = 120
+        self:pill("OK", (758 - w) / 2, 256, 40, "light", 16, w)
+        self:zone({ (758 - w) / 2 - 10, 250, w + 20, 52 }, function() self:pinSubmit() end)
+    end
+
+    -- keypad: 1-9, then 0
+    local d = 128
+    local cx = { 219, 379, 539 }
+    local cy = { 400, 548, 696, 844 }
+    local function key(label, letters, x, y)
+        self:box(x - d / 2, y - d / 2, d, d, nil, d / 2, 2, fg)
+        self:centerText(label, "sans", 40, x - d / 2, y - d / 2 + (letters ~= "" and 14 or 26), d, 56, fg, false)
+        if letters ~= "" then self:centerText(letters, "sans", 11, x - d / 2, y + 22, d, 20, fg, true) end
+        self:zone({ x - d / 2, y - d / 2, d, d }, function() self:pinDigit(label) end)
+    end
+    for i, k in ipairs(KEYS) do
+        key(k[1], k[2], cx[(i - 1) % 3 + 1], cy[math.floor((i - 1) / 3) + 1])
+    end
+    key("0", "", cx[2], cy[4])
+    if o.allow_cancel then
+        self:centerText("Cancel", "sans", 19, cx[1] - 80, cy[4] - 20, 160, 40, fg, false)
+        self:zone({ cx[1] - 80, cy[4] - 50, 160, 100 }, function() self:pinClose(); if o.on_cancel then o.on_cancel() end end)
+    end
+    if #o.code > 0 then
+        self:centerText("Delete", "sans", 19, cx[3] - 80, cy[4] - 20, 160, 40, fg, false)
+        self:zone({ cx[3] - 80, cy[4] - 50, 160, 100 }, function()
+            o.code = o.code:sub(1, -2)
+            o.message = nil
+            self:rebuild("fast")
+        end)
+    end
+    if o.option then
+        self:centerText(o.option[1], "sans", 15, 0, 950, 758, 30, fg, true)
+        self:zone({ 200, 940, 358, 50 }, function() o.code = ""; o.option[2](o); self:rebuild("ui") end)
+    end
+end
+
+function Canvas:pinDigit(dg)
+    local o = self.pin
+    if o.blocked_until and os.time() < o.blocked_until then return end
+    if o.length and #o.code >= o.length then return end
+    if #o.code >= 8 then return end
+    o.code = o.code .. dg
+    o.message = nil
+    if o.length and #o.code == o.length then
+        self:rebuild("fast")
+        UIManager:scheduleIn(0.15, function() self:pinSubmit() end)
+    else
+        self:rebuild("fast")
+    end
+end
+
+function Canvas:pinSubmit()
+    local o = self.pin
+    local code = o.code
+    o.code = ""
+    o.on_code(code, self)
+end
+
+-- show a message in place of the title (e.g. "Wrong Passcode") and clear the dots
+function Canvas:pinRetry(msg)
+    local o = self.pin
+    o.code = ""
+    o.message = msg
+    o.fails = (o.fails or 0) + 1
+    if o.fails >= 5 then
+        o.blocked_until = os.time() + 30
+        o.message = _("Too many tries. Wait 30 seconds")
+        UIManager:scheduleIn(30, function() o.fails = 0; o.message = nil; if self.is_open then self:rebuild("ui") end end)
+    end
+    self:rebuild("ui")
+end
+
+-- reuse the same keypad for the next step (e.g. "Re-enter your new passcode")
+function Canvas:pinNext(opts)
+    opts.code = ""
+    self.pin = opts
+    self:rebuild("ui")
+end
+
+function Canvas:pinClose()
+    self.is_open = false
+    UIManager:close(self, "full")
+end
+
 -- width of a string in design units (for right-aligned text)
 function Canvas:measure(str, kind, size, bold)
     return TextWidget:new{ text = str, face = face(kind, size), bold = bold }:getSize().w / SX
@@ -290,6 +402,7 @@ function Canvas:zone(rect, cb)
 end
 
 function Canvas:onSwipeCanvas(_args, ges)
+    if self.mode == "pin" then return true end
     local dir = ges and ges.direction
     if dir == "south" and not self.control and ges.pos and ges.pos.y < Screen:getHeight() / 3 then
         self:openControl()
@@ -300,6 +413,7 @@ function Canvas:onSwipeCanvas(_args, ges)
 end
 -- Safety net: press and hold anywhere to open the control centre (Home, Blackhole, etc.).
 function Canvas:onHoldCanvas()
+    if self.mode == "pin" then return true end
     if self.openControl and not self.control then self:openControl() end
     return true
 end
@@ -335,7 +449,7 @@ function Canvas:rebuild(refresh)
     end
     local bg = ({ home = "home", papers = "papers", subs = "substacks", library = "library",
         today = "today", checkin = "checkin", log = "log", work = "work", week = "week", month = "month",
-        stats = "stats", focus = "focus" })[self.mode] .. (self.night and "_night.png" or ".png")
+        stats = "stats", focus = "focus", pin = "pin" })[self.mode] .. (self.night and "_night.png" or ".png")
     if not exists(plugin_dir .. "/screens/" .. bg) then bg = bg:gsub("_night", "") end
     self:put(ImageWidget:new{ file = plugin_dir .. "/screens/" .. bg, width = Screen:getWidth(), height = Screen:getHeight(),
         file_do_cache = false, original_in_nightmode = true }, 0, 0)
@@ -350,8 +464,9 @@ function Canvas:rebuild(refresh)
     elseif self.mode == "month" then self:buildMonth()
     elseif self.mode == "stats" then self:buildStats()
     elseif self.mode == "focus" then self:buildFocus()
+    elseif self.mode == "pin" then self:buildPin()
     else self:buildSubs() end
-    if self.drawHandle then self:drawHandle() end
+    if self.drawHandle and self.mode ~= "pin" then self:drawHandle() end
     if self.control and self.drawControl then self:drawControl() end
     self[1] = OverlapGroup:new{ dimen = self.dimen:copy(), allow_mirroring = false, unpack(self.items) }
     if refresh then UIManager:setDirty(self, refresh) end
@@ -857,6 +972,13 @@ function SelfV2:init()
     self.layout = dofile(self.path .. "/layout.lua")
     N = N or dofile(self.path .. "/notion.lua")
     S = S or dofile(self.path .. "/settings.lua")
+    S.pinPad = function(opts)
+        opts.code = ""
+        local c = Canvas:new{ plugin = self, mode = "pin", pin = opts, modal = true, covers_fullscreen = true }
+        c.is_open = true
+        UIManager:show(c, "full")
+        return c
+    end
     if not Canvas.drawControl then
         dofile(self.path .. "/control.lua")(Canvas, { S = S, BLACK = BLACK, WHITE = WHITE, GREY = GREY, LIGHT = LIGHT, plugin_dir = self.path })
     end
