@@ -12,18 +12,8 @@ jobs:
       - env: { ANTHROPIC_API_KEY: "${{ secrets.ANTHROPIC_API_KEY }}" }
         run: |
           python3 - <<'PY'
-          import json, re, urllib.request, urllib.parse, traceback
+          import datetime as dt
           import hindu_epaper as h
-          base = h.ROOT.format(edition="th_mumbai") + "issues/215307/OPS/"
-          raw = h._get(base + "GBEGRACK6.1%2BGVBGRCAI6.1.html").decode()
-          m = re.search(r"let galleryItems\s*=\s*(\[.*?\]);", raw, re.S)
-          print("REGEX", bool(m))
-          art = h._parse_article(raw); print("REF", art["photo"])
-          if art["photo"]:
-              for u in [base + urllib.parse.quote(art["photo"], safe="/+"), base + art["photo"], base + urllib.parse.quote(art["photo"])]:
-                  try:
-                      b = h._get(u); print("GET", len(b), b[:4], u[-50:])
-                  except Exception as e: print("ERR", e, u[-50:])
-          else:
-              i = raw.find("galleryItems"); print("CTX", raw[i-40:i+200].replace("\n"," "))
+          st = h.collect("th_mumbai", (dt.datetime.utcnow() + dt.timedelta(hours=5, minutes=30)).date())
+          print("WITHPHOTO", sum(1 for s in st if s.get("images")), "of", len(st), "sizes KB", sorted(len(s["images"][0][1])//1024 for s in st if s.get("images"))[-5:])
           PY

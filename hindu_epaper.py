@@ -64,10 +64,10 @@ def _parse_article(raw: str):
         sub = p.getparent() is not None and "subhead" in (p.getparent().get("class") or "")
         paras.append(("h3" if sub else "p", t))
     photo, caption = None, ""
-    m = re.search(r"let galleryItems\s*=\s*(\[.*?\]);", raw, re.S)
+    m = re.search(r"galleryItems\s*=\s*\[", raw)
     if m:
         try:
-            items = json.loads(m.group(1))
+            items, _end = json.JSONDecoder().raw_decode(raw, m.end() - 1)
             if items:
                 photo = items[0].get("imageRef")
                 caption = _text(lxml.html.fromstring(items[0].get("captionBody") or "<p></p>"))
