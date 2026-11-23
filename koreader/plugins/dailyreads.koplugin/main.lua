@@ -84,6 +84,49 @@ function DailyReads:clearOld()
     return removed
 end
 
+-- Sealed files (your subscriber e-paper) are encrypted on the web with your paper passphrase.
+-- Same scheme as seal.py: key from sha256 rounds, then SHA-256 in counter mode.
+local function hex2bin(h) return (h:gsub("..", function(c) return string.char(tonumber(c, 16)) end)) end
+
+local function unseal(path, dest, passphrase)
+    local ok, sha2 = pcall(require, "ffi/sha2")
+    if not ok then return false, "no sha2" end
+    local bit = require("bit")
+    local fh = io.open(path, "rb")
+    if not fh then return false, "missing" end
+    local blob = fh:read("*a")
+    fh:close()
+    if blob:sub(1, 5) ~= "SVPK1" then return false, "not sealed" end
+    local salt = blob:sub(6, 21)
+    local pw = passphrase:match("^%s*(.-)%s*$")
+    local k = hex2bin(sha2.sha256(salt .. pw))
+    for _i = 1, 1000 do k = hex2bin(sha2.sha256(k .. pw)) end
+    local data, n = blob:sub(22), #blob - 21
+    local out = io.open(dest, "wb")
+    if not out then return false, "can't write" end
+    local buf, bytes = {}, {}
+    local block = 0
+    for pos = 1, n, 32 do
+        local ctr = string.char(0, 0, 0, bit.band(bit.rshift(block, 24), 255), bit.band(bit.rshift(block, 16), 255),
+            bit.band(bit.rshift(block, 8), 255), bit.band(block, 255))
+        local ks = hex2bin(sha2.sha256(k .. "\0" .. ctr))
+        local len = math.min(32, n - pos + 1)
+        for j = 1, len do
+            bytes[j] = bit.bxor(data:byte(pos + j - 1), ks:byte(j))
+        end
+        buf[#buf + 1] = string.char(unpack(bytes, 1, len))
+        if #buf >= 2048 then out:write(table.concat(buf)); buf = {} end
+        block = block + 1
+    end
+    out:write(table.concat(buf))
+    out:close()
+    local check = io.open(dest, "rb")
+    local head = check and check:read(2)
+    if check then check:close() end
+    if head ~= "PK" then os.remove(dest); return false, "wrong passphrase" end
+    return true
+end
+
 function DailyReads:download(after)
     local base = baseUrl()
     if base == "" then
@@ -107,6 +150,7 @@ function DailyReads:download(after)
 
     lfs.mkdir(FOLDER)
     local got, have, failed = 0, 0, 0
+    local locked, badkey
     for _i, f in ipairs(manifest.files) do
       if f.file and f.url then
         local dir = FOLDER
@@ -119,9 +163,21 @@ function DailyReads:download(after)
             have = have + 1
         else
             local tmp = dest .. ".part"
+            local key = G_reader_settings:readSetting("selfv2_paper_key")
+            if f.sealed and not (key and key ~= "") then
+                locked = (locked or 0) + 1
+                goto continue
+            end
             local fh = io.open(tmp, "wb")
             local c = fh and get(base .. urlencode(f.url), ltn12.sink.file(fh))
-            if c == 200 then
+            if c == 200 and f.sealed then
+                local okk, why = unseal(tmp, dest, key)
+                os.remove(tmp)
+                if okk then got = got + 1 else
+                    failed = failed + 1
+                    if why == "wrong passphrase" then badkey = true end
+                end
+            elseif c == 200 then
                 os.rename(tmp, dest)
                 got = got + 1
             else
@@ -130,6 +186,7 @@ function DailyReads:download(after)
             end
         end
       end
+      ::continue::
     end
     -- keep a copy of the manifest for the dashboard page (headlines, counts)
     local mf = io.open(FOLDER .. "/today.json", "w")
@@ -139,6 +196,8 @@ function DailyReads:download(after)
     local lines = { string.format(_("%s: %d new, %d already here."), manifest.label or manifest.date, got, have) }
     if failed > 0 then table.insert(lines, string.format(_("%d failed — tap again to retry."), failed)) end
     if removed > 0 then table.insert(lines, string.format(_("Cleared %d from last week."), removed)) end
+    if locked then table.insert(lines, _("Your e-paper needs the paper passphrase: Settings → Paper passphrase.")) end
+    if badkey then table.insert(lines, _("The paper passphrase doesn't match the one on GitHub: Settings → Paper passphrase.")) end
     UIManager:show(InfoMessage:new{ text = table.concat(lines, "\n"), timeout = 6 })
     if after then UIManager:scheduleIn(0.3, after) end
 end

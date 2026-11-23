@@ -375,6 +375,10 @@ def make_digest_cover(date_label, posts) -> bytes:
 
 CSS = """
 body{font-family:serif;line-height:1.45;margin:0 4%}
+.deck{font-style:italic;margin:.2em 0 .8em}
+.photo{margin:.6em 0}.photo img{width:100%}
+.caption{font-size:.8em;margin:.2em 0 .8em}
+h3{font-size:1.05em;margin:1em 0 .3em}
 h1,h2{font-weight:normal;line-height:1.15}
 h1{font-size:1.7em;margin:.6em 0 .3em}
 h2{font-size:1.25em;margin:1.2em 0 .2em}
@@ -429,6 +433,9 @@ def write_epub(path: Path, title, author, date_label, cover, picks, stories, are
         for i in idxs:
             s = stories[i]
             c = epub.EpubHtml(title=s["title"], file_name=f"s{i}.xhtml")
+            for img_name, img_bytes in s.get("images") or []:
+                book.add_item(epub.EpubImage(uid=img_name.replace("/", "_"), file_name=img_name,
+                                             media_type="image/jpeg", content=img_bytes))
             meta = " · ".join(x for x in [sec, s["author"], s["when"].astimezone(ZoneInfo("Asia/Kolkata")).strftime("%a %d %b, %H:%M") if s["when"] else ""] if x)
             short = f"<p class='short'><b>In short:</b> {esc(s['summary'])}</p>" if s.get("summary") else ""
             c.content = (f"<h1>{esc(s['title'])}</h1><p class='meta'>{esc(meta)}</p>{short}{s['body']}"
@@ -469,7 +476,20 @@ def main():
 
     for paper in cfg.get("papers", []):
         print(f"• {paper['name']}")
-        stories = collect(paper["sections"], paper.get("per_section", 8), since, not args.no_full_text)
+        stories, sealed = [], False
+        if paper.get("epaper"):
+            # the subscriber e-paper (articles only, ads dropped); published only when it can be sealed
+            if os.environ.get("PAPER_KEY"):
+                try:
+                    import hindu_epaper
+                    stories = hindu_epaper.collect(paper["epaper"], now.date())
+                    sealed = bool(stories)
+                except Exception as e:
+                    print(f"  ! e-paper failed, using the free feeds instead: {e}", file=sys.stderr)
+            else:
+                print("  (PAPER_KEY secret not set: using the free feeds instead of the e-paper)")
+        if not stories:
+            stories = collect(paper["sections"], paper.get("per_section", 8), since, not args.no_full_text)
         if not stories:
             print("  (no stories, skipped)")
             continue
@@ -477,9 +497,16 @@ def main():
         cover = make_cover(paper["name"], paper.get("subtitle", ""), date_label, [stories[p["i"]]["title"] for p in picks], paper.get("texture", "lace"))
         fname = f"{date_id} {paper['name']}.epub"
         frags = write_epub(ed_dir / fname, paper["name"], paper["name"], date_label, cover, picks, stories, "Current Affairs")
+        url = f"editions/{date_id}/{fname}"
+        if sealed:
+            import seal
+            plain = ed_dir / fname
+            (ed_dir / (fname + ".sv")).write_bytes(seal.seal(plain.read_bytes(), os.environ["PAPER_KEY"]))
+            plain.unlink()
+            url += ".sv"
         manifest["files"].append({
-            "id": paper["id"], "kind": "paper", "name": paper["name"], "file": fname,
-            "url": f"editions/{date_id}/{fname}", "count": len(stories), "area": "Current Affairs",
+            "id": paper["id"], "kind": "paper", "name": paper["name"], "file": fname, "sealed": sealed,
+            "url": url, "count": len(stories), "area": "Current Affairs",
             "highlights": [{"title": stories[p["i"]]["title"], "tag": p.get("tag", ""), "why": p.get("why", ""),
                             "frag": frags.get(p["i"])} for p in picks],
         })

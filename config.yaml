@@ -21,7 +21,8 @@ papers:
 
   - id: hindu
     name: The Hindu
-    subtitle: National edition
+    subtitle: Mumbai edition
+    epaper: th_mumbai      # your e-paper subscription; the feeds below are the fallback
     texture: zebra
     per_section: 8
     tags: [National, International, Economy, Opinion, Science]

@@ -1109,6 +1109,28 @@ function SelfV2:notionSetup(bad)
     dlg:onShowKeyboard()
 end
 
+-- The passphrase that unlocks your e-paper (the same one saved as PAPER_KEY on GitHub)
+function SelfV2:paperKeyDialog()
+    local InputDialog = require("ui/widget/inputdialog")
+    local dlg
+    dlg = InputDialog:new{
+        title = _("Paper passphrase"),
+        description = _("The same words you saved as PAPER_KEY on GitHub. Then tap Download today's reads again."),
+        input = G_reader_settings:readSetting("selfv2_paper_key") or "",
+        buttons = { {
+            { text = _("Cancel"), id = "close", callback = function() UIManager:close(dlg) end },
+            { text = _("Save"), is_enter_default = true, callback = function()
+                local v = (dlg:getInputText() or ""):match("^%s*(.-)%s*$")
+                G_reader_settings:saveSetting("selfv2_paper_key", v ~= "" and v or nil)
+                UIManager:close(dlg)
+                UIManager:show(InfoMessage:new{ text = _("Saved."), timeout = 2 })
+            end },
+        } },
+    }
+    UIManager:show(dlg)
+    dlg:onShowKeyboard()
+end
+
 function SelfV2:settingsDialog(canvas)
     local dlg
     local function btn(text, cb) return { text = text, callback = function() UIManager:close(dlg); cb() end } end
@@ -1124,7 +1146,8 @@ function SelfV2:settingsDialog(canvas)
               btn(_("Text size"), function() S.sizeMenu() end) },
             { btn(S.hasPin() and _("Passcode: on") or _("Passcode: off"), function() S.pinMenu() end),
               btn(_("Connect Notion"), function() self:notionSetup(false) end) },
-            { btn(_("Sleep screen: my lock image"), function() S.useLockImage(false) end) },
+            { btn(_("Sleep screen: my lock image"), function() S.useLockImage(false) end),
+              btn(_("Paper passphrase"), function() self:paperKeyDialog() end) },
             { btn(_("KOReader menu · all settings"), function()
                 local menu = self.ui and self.ui.menu
                 if menu and menu.onShowMenu then menu:onShowMenu() end

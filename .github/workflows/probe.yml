@@ -5,20 +5,32 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - run: pip install lxml >/dev/null
-      - run: |
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt >/dev/null
+      - env: { ANTHROPIC_API_KEY: "${{ secrets.ANTHROPIC_API_KEY }}" }
+        run: |
           python3 - <<'PY'
-          import json, re, urllib.request, lxml.html
-          def get(u):
-              req = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0"})
-              with urllib.request.urlopen(req, timeout=30) as r: return r.read()
-          base = "https://epaper.thehindu.com/ccidist-ws/th/th_mumbai/issues/215307/OPS/"
-          o = json.loads(get(base + "cciobjects.json"))
-          arts = [(p, c) for p in o["children"] for c in p.get("children", []) if c["kind"] == "Article"]
-          for p, c in arts:
-              if p["attributes"]["Page"] not in ("1", "10"): continue
-              a = c["attributes"]
-              t = lxml.html.fromstring(get(base + f"{p['id']}%2B{c['id']}.html")).xpath('string(//div[contains(@class,"body")])')
-              t = re.sub(r"\s+", " ", t)
-              print(p["attributes"]["Page"], "|", a.get("Headline","")[:40], "|", a.get("Name","")[:40], "| SG", a.get("StoryGroup"), "| SAU", a.get("SameAsUid"), "| JTP", a.get("JumpToPage"), "| JT", a.get("JumpTo"), "| JF", a.get("JumpFrom"), "|", t[:70])
+          import datetime as dt, os, collections, zipfile, io
+          from pathlib import Path
+          import hindu_epaper, build, seal
+          day = (dt.datetime.utcnow() + dt.timedelta(hours=5, minutes=30)).date()
+          st = hindu_epaper.collect("th_mumbai", day)
+          c = collections.Counter(s["section"] for s in st)
+          print("SECTIONS", list(c.items()))
+          for s in st[:6]: print("STORY", s["section"], "|", s["title"][:70], "|", s["author"], "|", sum(len(t.split()) for _k, t in s["paras"]), "words")
+          long = max(st, key=lambda s: sum(len(t.split()) for _k, t in s["paras"]))
+          print("LONGEST", long["title"][:60], sum(len(t.split()) for _k, t in long["paras"]))
+          picks = build.pick_highlights({"name": "The Hindu"}, st, "claude-haiku-5-5")
+          for p in picks: print("PICK", st[p["i"]]["title"][:70], "—", p.get("why","")[:80])
+          cover = build.make_cover("The Hindu", "Mumbai edition", "Tue 24 Nov", [st[p["i"]]["title"] for p in picks], "zebra")
+          out = Path("/tmp/h.epub")
+          build.write_epub(out, "The Hindu", "The Hindu", "Tue 24 Nov", cover, picks, st, "Current Affairs")
+          raw = out.read_bytes()
+          z = zipfile.ZipFile(io.BytesIO(raw)); imgs = [n for n in z.namelist() if n.endswith(".jpg")]
+          print("EPUB", len(raw)//1024, "KB", len(z.namelist()), "files", len(imgs), "images")
+          key = os.urandom(8).hex()
+          sv = seal.seal(raw, key); assert seal.unseal(sv, key) == raw
+          print("SEALED OK", len(sv)//1024, "KB, starts", sv[:5], "plain PK hidden:", b"PK" not in sv[21:23])
           PY

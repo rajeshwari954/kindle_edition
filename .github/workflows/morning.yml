@@ -31,6 +31,7 @@ jobs:
           EDITION_KEY: ${{ secrets.EDITION_KEY }}
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          PAPER_KEY: ${{ secrets.PAPER_KEY }}
         run: |
           test -n "$EDITION_KEY" || { echo "Add the EDITION_KEY secret first"; exit 1; }
           python build.py --out "site/$EDITION_KEY"

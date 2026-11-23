@@ -6,3 +6,4 @@ Pillow>=10.0
 trafilatura>=1.8
 anthropic>=0.40
 pymupdf
+lxml
