@@ -495,7 +495,7 @@ def main():
             continue
         picks = pick_highlights(paper, stories, cfg.get("summary_model", "claude-haiku-5-5"))
         cover = make_cover(paper["name"], paper.get("subtitle", ""), date_label, [stories[p["i"]]["title"] for p in picks], paper.get("texture", "lace"))
-        fname = f"{date_id} {paper['name']}.epub"
+        fname = f"{date_id} {paper['name']}{' e-paper' if sealed else ''}.epub"
         frags = write_epub(ed_dir / fname, paper["name"], paper["name"], date_label, cover, picks, stories, "Current Affairs")
         url = f"editions/{date_id}/{fname}"
         if sealed:
