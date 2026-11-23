@@ -30,6 +30,29 @@ local function battery()
     return ok and cap or nil, ok2 and chg or false
 end
 
+-- free and total space on the Kindle's own storage (where books and papers live), in bytes
+local function storage()
+    local ok, util = pcall(require, "util")
+    if ok and util and util.diskUsage then
+        local ok2, u = pcall(util.diskUsage, "/mnt/us")
+        if ok2 and type(u) == "table" and u.total and u.available then
+            return u.available * (u.total > 1e7 and 1 or 1024), u.total * (u.total > 1e7 and 1 or 1024)
+        end
+    end
+    local okp, p = pcall(io.popen, "df -k /mnt/us 2>/dev/null")
+    if not okp or not p then return nil end
+    local out = p:read("*a") or ""
+    p:close()
+    local total, _used, avail = out:match("\n%S+%s+(%d+)%s+(%d+)%s+(%d+)")
+    if total then return tonumber(avail) * 1024, tonumber(total) * 1024 end
+    return nil
+end
+
+local function gb(b)
+    if b >= 1e9 then return string.format("%.1f GB", b / 1e9) end
+    return string.format("%d MB", math.floor(b / 1e6 + 0.5))
+end
+
 local function lightLevel()
     local p = powerd()
     if not p or not Device:hasFrontlight() then return nil end
@@ -88,6 +111,19 @@ function Canvas:drawControl()
     -- clock, date, battery
     self:text(os.date("%H:%M"), "serif", 52, 30, 24)
     self:text((os.date("%A, %d %B"):gsub(" 0", " ")), "sans", 16, 32, 92, GREY)
+    -- storage: a small bar and what's free
+    local free, total = storage()
+    if free and total and total > 0 then
+        local used = math.max(0, math.min(1, 1 - free / total))
+        self:text("Storage", "sans", 13, 262, 30, GREY, true)
+        self:box(262, 54, 220, 10, LIGHT, 5)
+        self:box(262, 54, math.max(10, 220 * used), 10, used > 0.9 and BLACK or GREY, 5)
+        self:text(gb(free) .. " free of " .. gb(total), "sans", 13, 262, 72, used > 0.9 and BLACK or GREY, used > 0.9)
+        self:zone({ 254, 22, 236, 76 }, function()
+            UIManager:show(InfoMessage:new{ text = string.format(_("Storage: %s free of %s.\nOld papers are cleared every Sunday; finished books can be deleted from Library or Open files."), gb(free), gb(total)), timeout = 5 })
+        end)
+    end
+
     local cap, charging = battery()
     if cap then
         self:box(608, 38, 96, 40, nil, 10, 3)
