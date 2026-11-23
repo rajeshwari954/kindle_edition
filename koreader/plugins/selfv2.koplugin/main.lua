@@ -773,7 +773,10 @@ function SelfV2:init()
     -- and always after tapping Home inside a book.
     local first = not shown_at_launch
     shown_at_launch = true
-    if first then UIManager:nextTick(function() S.lock() end) end
+    if first then
+        UIManager:nextTick(function() S.lock() end)
+        S.ensureLockImage()
+    end
     local want = force_home
         or (G_reader_settings:nilOrTrue("selfv2_home_on_start") and (first or G_reader_settings:nilOrTrue("selfv2_home_after_book")))
     force_home = false
@@ -1024,6 +1027,7 @@ function SelfV2:settingsDialog(canvas)
               btn(_("Text size"), function() S.sizeMenu() end) },
             { btn(S.hasPin() and _("Passcode: on") or _("Passcode: off"), function() S.pinMenu() end),
               btn(_("Connect Notion"), function() self:notionSetup(false) end) },
+            { btn(_("Sleep screen: my lock image"), function() S.useLockImage(false) end) },
             { btn(_("KOReader menu · all settings"), function()
                 local menu = self.ui and self.ui.menu
                 if menu and menu.onShowMenu then menu:onShowMenu() end

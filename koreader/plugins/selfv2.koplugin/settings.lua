@@ -98,6 +98,46 @@ function M.online(cb)
     NetworkMgr:runWhenOnline(cb)
 end
 
+---------------------------------------------------------------- sleep screen (your lock screen image)
+
+M.SLEEP_DIR = "/mnt/us/linkss/screensavers"
+
+local function sleepImages()
+    local lfs = require("libs/libkoreader-lfs")
+    local out = {}
+    local ok, iter, obj = pcall(lfs.dir, M.SLEEP_DIR)
+    if not ok then return out end
+    for f in iter, obj do
+        if f:lower():match("%.png$") or f:lower():match("%.jpe?g$") then table.insert(out, f) end
+    end
+    return out
+end
+
+-- Show the lock screen image(s) from the linkss folder when the Kindle sleeps from KOReader.
+function M.useLockImage(quiet)
+    local imgs = sleepImages()
+    if #imgs == 0 then
+        if not quiet then
+            UIManager:show(InfoMessage:new{ text = _("No images found in linkss/screensavers. Copy your lock screen image there over USB.") })
+        end
+        return false
+    end
+    G_reader_settings:saveSetting("screensaver_type", "random_image")
+    G_reader_settings:saveSetting("screensaver_dir", M.SLEEP_DIR)
+    G_reader_settings:saveSetting("screensaver_show_message", false)
+    G_reader_settings:saveSetting("screensaver_stretch_images", true)
+    G_reader_settings:saveSetting("selfv2_sleep_set", true)
+    if not quiet then
+        UIManager:show(InfoMessage:new{ text = _("Sleep screen set to your lock screen image. Press the power button to try it."), timeout = 3 })
+    end
+    return true
+end
+
+-- Done once, automatically, the first time self.v2 runs.
+function M.ensureLockImage()
+    if not G_reader_settings:isTrue("selfv2_sleep_set") then M.useLockImage(true) end
+end
+
 ---------------------------------------------------------------- reading font and size
 
 local SIZES = { { "Small", 20 }, { "Medium", 24 }, { "Large", 28 }, { "Extra large", 33 } }
