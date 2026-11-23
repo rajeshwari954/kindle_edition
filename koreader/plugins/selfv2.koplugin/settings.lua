@@ -151,20 +151,25 @@ local function fontFaces()
     return ok and faces or {}
 end
 
-function M.fontMenu()
+function M.fontMenu(ui)
+    local inBook = ui and ui.rolling and ui.font and ui.font.onSetFont
     local faces = fontFaces()
     if #faces == 0 then
         UIManager:show(InfoMessage:new{ text = _("Couldn't list fonts here. Open a book and use its font menu instead.") })
         return
     end
-    local current = G_reader_settings:readSetting("cre_font")
+    local current = (inBook and ui.font.font_face) or G_reader_settings:readSetting("cre_font")
     local Menu = require("ui/widget/menu")
     local menu
     local items = {}
     for _i, f in ipairs(faces) do
         table.insert(items, { text = f .. (f == current and "  ✓" or ""), callback = function()
-            G_reader_settings:saveSetting("cre_font", f)
             UIManager:close(menu)
+            if inBook then
+                pcall(ui.font.onSetFont, ui.font, f)
+                return
+            end
+            G_reader_settings:saveSetting("cre_font", f)
             UIManager:show(InfoMessage:new{ text = f .. _(" is now the reading font for books you open next. Books you've already set up keep their own font."), timeout = 4 })
         end })
     end
@@ -313,6 +318,82 @@ function M.lock()
         end, false)
     end
     ask()
+end
+
+---------------------------------------------------------------- reading: size, paper, night (used by the control centre)
+
+function M.fontName(ui)
+    local f = (ui and ui.rolling and ui.font and ui.font.font_face) or G_reader_settings:readSetting("cre_font")
+    return f or "Default"
+end
+
+function M.fontSize(ui)
+    if ui and ui.rolling and ui.document and ui.document.configurable then
+        return ui.document.configurable.font_size
+    end
+    return G_reader_settings:readSetting("copt_font_size") or 22
+end
+
+-- step the text size of the open book (or the default for the next one)
+function M.stepSize(ui, delta)
+    local cur = M.fontSize(ui) or 22
+    local new = math.max(12, math.min(60, cur + delta))
+    if ui and ui.rolling and ui.font and ui.font.onSetFontSize then
+        pcall(ui.font.onSetFontSize, ui.font, new)
+        if ui.document and ui.document.configurable then ui.document.configurable.font_size = new end
+    else
+        G_reader_settings:saveSetting("copt_font_size", new)
+    end
+    return new
+end
+
+-- paper tones: the Paperwhite shows greys, so these are shades of paper
+M.PAPERS = { { "white", "White" }, { "ivory", "Ivory" }, { "soft", "Soft" }, { "grey", "Grey" } }
+
+function M.paper() return G_reader_settings:readSetting("selfv2_paper") or "white" end
+
+-- apply the saved paper tone to an open book; returns false if this book can't take one
+function M.applyPaper(ui, plugin_dir)
+    local doc = ui and ui.document
+    if not (doc and ui.rolling and doc.setBackgroundImage) then return false end
+    local p = M.paper()
+    local path = p ~= "white" and (plugin_dir .. "/screens/paper_" .. p .. ".png") or nil
+    local ok = pcall(doc.setBackgroundImage, doc, path)
+    if ok then
+        pcall(function() ui:handleEvent(require("ui/event"):new("UpdatePos")) end)
+        UIManager:setDirty("all", "full")
+    end
+    return ok
+end
+
+function M.setPaper(ui, plugin_dir, p)
+    G_reader_settings:saveSetting("selfv2_paper", p ~= "white" and p or nil)
+    return M.applyPaper(ui, plugin_dir)
+end
+
+-- Night: softer light and a softer paper (the Paperwhite 2 has no warm light, so this is the closest)
+function M.isNight() return G_reader_settings:readSetting("selfv2_night") ~= nil end
+
+function M.toggleNight(ui, plugin_dir)
+    local Device = require("device")
+    local okp, p = pcall(function() return Device:getPowerDevice() end)
+    p = okp and p or nil
+    local night = G_reader_settings:readSetting("selfv2_night")
+    if night then
+        if p and night.light then pcall(p.setIntensity, p, night.light) end
+        G_reader_settings:saveSetting("selfv2_paper", night.paper)
+        G_reader_settings:delSetting("selfv2_night")
+    else
+        local cur
+        if p then local ok, v = pcall(p.frontlightIntensity, p); cur = ok and v or nil end
+        G_reader_settings:saveSetting("selfv2_night", { light = cur, paper = G_reader_settings:readSetting("selfv2_paper") })
+        if p and cur then
+            local lo, hi = p.fl_min or 0, p.fl_max or 24
+            pcall(p.setIntensity, p, math.max(lo + 1, math.min(cur, math.floor(lo + (hi - lo) * 0.25 + 0.5))))
+        end
+        G_reader_settings:saveSetting("selfv2_paper", "ivory")
+    end
+    M.applyPaper(ui, plugin_dir)
 end
 
 return M

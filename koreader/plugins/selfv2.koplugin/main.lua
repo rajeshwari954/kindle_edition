@@ -325,6 +325,14 @@ function Canvas:rebuild(refresh)
     -- (shown as-is), and draw text that sits on a texture in black, which night mode turns white.
     self.night = G_reader_settings:isTrue("night_mode")
     self.texfg = self.night and BLACK or WHITE
+    if self.overlay then
+        -- the control centre on its own, drawn over whatever you're reading
+        self.control = true
+        self:drawControl()
+        self[1] = OverlapGroup:new{ dimen = self.dimen:copy(), allow_mirroring = false, unpack(self.items) }
+        if refresh then UIManager:setDirty(self, refresh) end
+        return
+    end
     local bg = ({ home = "home", papers = "papers", subs = "substacks", library = "library",
         today = "today", checkin = "checkin", log = "log", work = "work", week = "week", month = "month",
         stats = "stats", focus = "focus" })[self.mode] .. (self.night and "_night.png" or ".png")
@@ -850,7 +858,7 @@ function SelfV2:init()
     N = N or dofile(self.path .. "/notion.lua")
     S = S or dofile(self.path .. "/settings.lua")
     if not Canvas.drawControl then
-        dofile(self.path .. "/control.lua")(Canvas, { S = S, BLACK = BLACK, WHITE = WHITE, GREY = GREY, LIGHT = LIGHT })
+        dofile(self.path .. "/control.lua")(Canvas, { S = S, BLACK = BLACK, WHITE = WHITE, GREY = GREY, LIGHT = LIGHT, plugin_dir = self.path })
     end
     if not Canvas.buildToday then
         dofile(self.path .. "/dash.lua")(Canvas, {
@@ -911,7 +919,51 @@ end
 
 ---------------------------------------------------------------- Back / Home buttons in the reader
 
+-- In any book: a handle at the top centre (tap it, or swipe down from the top) opens the control centre.
+function SelfV2:addReaderControl()
+    local view = self.view or self.ui.view
+    if not view or not view.registerViewModule then return end
+    setScale()
+    local hw, hh = px(120), py(10)
+    local hx, hy = math.floor((Screen:getWidth() - hw) / 2), py(6)
+    local bar = FrameContainer:new{ background = BLACK, bordersize = 0, radius = math.floor(hh / 2), padding = 0, margin = 0,
+        Widget:new{ dimen = Geom:new{ w = hw, h = hh } } }
+    view:registerViewModule("selfv2_handle", Widget:new{ dimen = Geom:new{ w = 0, h = 0 },
+        paintTo = function(_m, bb, x, y) bar:paintTo(bb, x + hx, y + hy) end })
+    local W, H = Screen:getWidth(), Screen:getHeight()
+    self.ui:registerTouchZones({
+        { id = "selfv2_handle_tap", ges = "tap",
+          screen_zone = { ratio_x = (hx - px(30)) / W, ratio_y = 0, ratio_w = (hw + px(60)) / W, ratio_h = py(34) / H },
+          overrides = { "tap_forward", "tap_backward", "readermenu_tap", "readermenu_ext_tap", "readerconfigmenu_tap",
+              "readerconfigmenu_ext_tap", "readerhighlight_tap", "tap_link" },
+          handler = function() self:openReaderControl() return true end },
+        { id = "selfv2_handle_swipe", ges = "swipe",
+          screen_zone = { ratio_x = 0, ratio_y = 0, ratio_w = 1, ratio_h = 1 / 7 },
+          overrides = { "rolling_swipe", "paging_swipe", "readermenu_swipe", "readermenu_ext_swipe",
+              "readerconfigmenu_swipe", "readerconfigmenu_ext_swipe" },
+          handler = function(ges)
+              if ges and ges.direction == "south" then self:openReaderControl() return true end
+              return false
+          end },
+    })
+    -- your paper tone, on books that can take one
+    UIManager:nextTick(function() S.applyPaper(self.ui, self.path) end)
+end
+
+function SelfV2:openReaderControl()
+    if self.cc_open and self.cc_open.is_open then return end
+    local ok, c = pcall(Canvas.new, Canvas, { plugin = self, overlay = true, covers_fullscreen = false, mode = "home" })
+    if not ok then
+        logger.err("selfv2: control centre", c)
+        return
+    end
+    c.is_open = true
+    self.cc_open = c
+    UIManager:show(c, "ui")
+end
+
 function SelfV2:addReaderButtons()
+    self:addReaderControl()
     if not G_reader_settings:nilOrTrue("selfv2_reader_buttons") then return end
     local view = self.view or self.ui.view
     if not view or not view.registerViewModule then return end
@@ -990,6 +1042,7 @@ function SelfV2:onToggleNightMode()
 end
 
 function SelfV2:onSelfV2Control()
+    if self.ui and self.ui.document then self:openReaderControl() return true end
     self:showHome()
     if self.canvas then self.canvas:openControl() end
     return true
