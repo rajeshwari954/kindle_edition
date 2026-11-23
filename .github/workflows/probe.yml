@@ -1,0 +1,35 @@
+name: Probe Hindu
+on: { workflow_dispatch: {} }
+permissions: { contents: read }
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: pip install lxml >/dev/null
+      - run: |
+          python3 - <<'PY'
+          import json, re, urllib.request, lxml.html
+          def get(u):
+              req = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0"})
+              with urllib.request.urlopen(req, timeout=30) as r: return r.read()
+          base = "https://epaper.thehindu.com/ccidist-ws/th/th_mumbai/issues/215307/OPS/"
+          o = json.loads(get(base + "cciobjects.json"))
+          arts = [(p, c) for p in o["children"] for c in p.get("children", []) if c["kind"] == "Article"]
+          p, c = next((p, c) for p, c in arts if c["attributes"].get("Headline", "").startswith("India offers"))
+          h = get(base + f"{p['id']}%2B{c['id']}.html").decode()
+          body = h[h.find("<body"):]
+          body = re.sub(r"<script.*?</script>", "", body, flags=re.S)
+          print("=== ARTICLE BODY HTML ===")
+          print(re.sub(r"\s+", " ", body)[:3500])
+          print("=== ATTR KEYS ===", sorted(c["attributes"].keys()))
+          print("=== CONTINUATIONS ===")
+          n = 0
+          for p, c in arts:
+              t = lxml.html.fromstring(get(base + f"{p['id']}%2B{c['id']}.html")).text_content()
+              t = re.sub(r"\s+", " ", t)
+              m = re.search(r"(Continued (?:from|on) (?:Page|PAGE) ?\d+)", t)
+              if m:
+                  print(p["attributes"]["Page"], p["attributes"]["PageGroup"], "|", c["attributes"].get("Headline", "")[:50], "|", c["attributes"].get("Name", "")[:45], "|", m.group(1), "|", t[:90])
+                  n += 1
+              if n > 14: break
+          PY
