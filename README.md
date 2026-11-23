@@ -36,3 +36,8 @@ Your edition address is then: `https://<your-username>.github.io/kindle-edition/
   that, the story shows its teaser with the source link.
 - Paid Substack posts arrive as previews unless the writer gives you a private feed link.
 - Coming next: marking a paper read logs it to the Reading Log (Type: Newspaper, Area: Current Affairs).
+
+## self.v2 on the Kindle (start screen)
+`koreader/plugins/selfv2.koplugin` draws Home, Today's papers and Substacks. Backgrounds are baked by
+`python kindle/make_screens.py` (run it after changing the design, then commit).
+After the first install by cable, updates arrive over Wi-Fi: Home → Settings → Check for updates.

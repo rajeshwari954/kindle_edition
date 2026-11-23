@@ -84,7 +84,7 @@ function DailyReads:clearOld()
     return removed
 end
 
-function DailyReads:download()
+function DailyReads:download(after)
     local base = baseUrl()
     if base == "" then
         UIManager:show(InfoMessage:new{ text = _("Set the edition address first: Daily reads → Edition address.") })
@@ -133,6 +133,7 @@ function DailyReads:download()
     if failed > 0 then table.insert(lines, string.format(_("%d failed — tap again to retry."), failed)) end
     if removed > 0 then table.insert(lines, string.format(_("Cleared %d from last week."), removed)) end
     UIManager:show(InfoMessage:new{ text = table.concat(lines, "\n"), timeout = 6 })
+    if after then UIManager:scheduleIn(0.3, after) end
 end
 
 function DailyReads:addToMainMenu(menu_items)

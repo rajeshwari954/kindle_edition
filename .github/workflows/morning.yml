@@ -31,6 +31,11 @@ jobs:
         run: |
           test -n "$EDITION_KEY" || { echo "Add the EDITION_KEY secret first"; exit 1; }
           python build.py --out "site/$EDITION_KEY"
+          # Kindle plugins, for "Check for updates" on the Kindle
+          mkdir -p "site/$EDITION_KEY/app"
+          git rev-parse --short HEAD > koreader/plugins/selfv2.koplugin/version.txt
+          tar -czf "site/$EDITION_KEY/app/plugins.tar.gz" -C koreader/plugins dailyreads.koplugin selfv2.koplugin
+          cp koreader/plugins/selfv2.koplugin/version.txt "site/$EDITION_KEY/app/version.txt"
           printf 'User-agent: *\nDisallow: /\n' > site/robots.txt
           echo '<!doctype html><title>.</title>' > site/index.html
       - uses: actions/upload-pages-artifact@v3

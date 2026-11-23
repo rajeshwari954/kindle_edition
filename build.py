@@ -342,6 +342,9 @@ def write_epub(path: Path, title, author, date_label, cover, picks, stories, are
     book.add_author(author)
     book.add_metadata("DC", "subject", area)  # so the Kindle sync can file it in the Reading Log
     book.set_cover("cover.jpg", cover)
+    cover_page = book.get_item_with_id("cover")
+    if cover_page is not None:
+        cover_page.is_linear = True  # a normal first page, so article positions count from it
     css = epub.EpubItem(uid="css", file_name="style.css", media_type="text/css", content=CSS)
     book.add_item(css)
 
@@ -349,7 +352,8 @@ def write_epub(path: Path, title, author, date_label, cover, picks, stories, are
     for i, s in enumerate(stories):
         by_section.setdefault(s["section"], []).append(i)
 
-    chapters, spine = [], ["nav"]
+    chapters, spine = [], ["cover"]
+    frags = {}
     summary = epub.EpubHtml(title=summary_title, file_name="summary.xhtml")
     rows = []
     for n, p in enumerate(picks, 1):
@@ -374,6 +378,7 @@ def write_epub(path: Path, title, author, date_label, cover, picks, stories, are
             c.add_item(css)
             book.add_item(c)
             spine.append(c)
+            frags[i] = len(spine)  # 1-based DocFragment index KOReader uses to jump here
             sec_items.append(c)
         toc.append((epub.Section(sec), sec_items))
 
@@ -383,6 +388,7 @@ def write_epub(path: Path, title, author, date_label, cover, picks, stories, are
     book.add_item(epub.EpubNav())
     path.parent.mkdir(parents=True, exist_ok=True)
     epub.write_epub(str(path), book)
+    return frags
 
 
 # ---------------------------------------------------------------- main
@@ -412,11 +418,12 @@ def main():
         picks = pick_highlights(paper, stories, cfg.get("summary_model", "claude-haiku-5-5"))
         cover = make_cover(paper["name"], paper.get("subtitle", ""), date_label, [stories[p["i"]]["title"] for p in picks], paper.get("texture", "lace"))
         fname = f"{date_id} {paper['name']}.epub"
-        write_epub(ed_dir / fname, paper["name"], paper["name"], date_label, cover, picks, stories, "Current Affairs")
+        frags = write_epub(ed_dir / fname, paper["name"], paper["name"], date_label, cover, picks, stories, "Current Affairs")
         manifest["files"].append({
             "id": paper["id"], "kind": "paper", "name": paper["name"], "file": fname,
             "url": f"editions/{date_id}/{fname}", "count": len(stories), "area": "Current Affairs",
-            "highlights": [{"title": stories[p["i"]]["title"], "tag": p.get("tag", ""), "why": p.get("why", "")} for p in picks],
+            "highlights": [{"title": stories[p["i"]]["title"], "tag": p.get("tag", ""), "why": p.get("why", ""),
+                            "frag": frags.get(p["i"])} for p in picks],
         })
         print(f"  {len(stories)} stories")
         for p in picks:
@@ -439,12 +446,12 @@ def main():
             picks = [{"i": i, "tag": f'{p["section"]} · {p["mins"]} min', "why": p["summary"]} for i, p in enumerate(posts)]
             cover = make_digest_cover(date_label, posts)
             fname = f"{date_id} Substacks.epub"
-            write_epub(ed_dir / fname, "Substacks", "Substack digest", date_label, cover, picks, posts, "Substacks", "In this digest")
+            frags = write_epub(ed_dir / fname, "Substacks", "Substack digest", date_label, cover, picks, posts, "Substacks", "In this digest")
             manifest["files"].append({
                 "id": "substacks", "kind": "substacks", "name": "Substacks", "file": fname,
                 "url": f"editions/{date_id}/{fname}", "count": len(posts),
-                "posts": [{"title": p["title"], "pub": p["section"], "area": p["area"], "summary": p["summary"],
-                           "mins": p["mins"]} for p in posts],
+                "posts": [{"title": p["title"], "pub": p["section"], "area": p["area"], "summary": p["summary"], "frag": frags.get(i),
+                           "mins": p["mins"]} for i, p in enumerate(posts)],
             })
             print(f"  {len(posts)} posts")
 
