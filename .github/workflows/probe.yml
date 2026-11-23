@@ -15,21 +15,10 @@ jobs:
           base = "https://epaper.thehindu.com/ccidist-ws/th/th_mumbai/issues/215307/OPS/"
           o = json.loads(get(base + "cciobjects.json"))
           arts = [(p, c) for p in o["children"] for c in p.get("children", []) if c["kind"] == "Article"]
-          p, c = next((p, c) for p, c in arts if c["attributes"].get("Headline", "").startswith("India offers"))
-          h = get(base + f"{p['id']}%2B{c['id']}.html").decode()
-          body = h[h.find("<body"):]
-          body = re.sub(r"<script.*?</script>", "", body, flags=re.S)
-          print("=== ARTICLE BODY HTML ===")
-          print(re.sub(r"\s+", " ", body)[:3500])
-          print("=== ATTR KEYS ===", sorted(c["attributes"].keys()))
-          print("=== CONTINUATIONS ===")
-          n = 0
           for p, c in arts:
-              t = lxml.html.fromstring(get(base + f"{p['id']}%2B{c['id']}.html")).text_content()
+              if p["attributes"]["Page"] not in ("1", "10"): continue
+              a = c["attributes"]
+              t = lxml.html.fromstring(get(base + f"{p['id']}%2B{c['id']}.html")).xpath('string(//div[contains(@class,"body")])')
               t = re.sub(r"\s+", " ", t)
-              m = re.search(r"(Continued (?:from|on) (?:Page|PAGE) ?\d+)", t)
-              if m:
-                  print(p["attributes"]["Page"], p["attributes"]["PageGroup"], "|", c["attributes"].get("Headline", "")[:50], "|", c["attributes"].get("Name", "")[:45], "|", m.group(1), "|", t[:90])
-                  n += 1
-              if n > 14: break
+              print(p["attributes"]["Page"], "|", a.get("Headline","")[:40], "|", a.get("Name","")[:40], "| SG", a.get("StoryGroup"), "| SAU", a.get("SameAsUid"), "| JTP", a.get("JumpToPage"), "| JT", a.get("JumpTo"), "| JF", a.get("JumpFrom"), "|", t[:70])
           PY
