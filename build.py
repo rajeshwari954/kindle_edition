@@ -419,6 +419,8 @@ def main():
             "highlights": [{"title": stories[p["i"]]["title"], "tag": p.get("tag", ""), "why": p.get("why", "")} for p in picks],
         })
         print(f"  {len(stories)} stories")
+        for p in picks:
+            print(f"    · [{p.get('tag', '')}] {stories[p['i']]['title'][:90]} — {p.get('why', '')}")
 
     subs = (cfg.get("substacks") or {})
     feeds = subs.get("feeds") or []
