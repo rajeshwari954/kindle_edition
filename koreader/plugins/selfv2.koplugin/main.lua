@@ -280,7 +280,15 @@ function Canvas:zone(rect, cb)
     table.insert(self.zones, { x = px(rect[1]), y = py(rect[2]), w = px(rect[3]), h = py(rect[4]), cb = cb })
 end
 
-function Canvas:onSwipeCanvas() return true end
+function Canvas:onSwipeCanvas(_args, ges)
+    local dir = ges and ges.direction
+    if dir == "south" and not self.control and ges.pos and ges.pos.y < Screen:getHeight() / 3 then
+        self:openControl()
+    elseif dir == "north" and self.control then
+        self:closeControl()
+    end
+    return true
+end
 function Canvas:onHoldCanvas() return true end
 
 function Canvas:onTapCanvas(_args, ges)
@@ -315,6 +323,8 @@ function Canvas:rebuild(refresh)
     elseif self.mode == "today" then self:buildToday()
     elseif self.mode == "checkin" then self:buildCheckin()
     else self:buildSubs() end
+    if self.drawHandle then self:drawHandle() end
+    if self.control and self.drawControl then self:drawControl() end
     self[1] = OverlapGroup:new{ dimen = self.dimen:copy(), allow_mirroring = false, unpack(self.items) }
     if refresh then UIManager:setDirty(self, refresh) end
 end
@@ -322,7 +332,7 @@ end
 function Canvas:go(mode)
     self.mode = mode
     self.sel, self.page = nil, 1
-    self.sheet = nil
+    self.sheet, self.control = nil, nil
     if mode == "library" then self.books, info_cache = nil, {} end
     if (mode == "today" or mode == "checkin") and not self:dashFresh() then
         self.sheet = nil
@@ -736,6 +746,9 @@ function SelfV2:init()
     self.layout = dofile(self.path .. "/layout.lua")
     N = N or dofile(self.path .. "/notion.lua")
     S = S or dofile(self.path .. "/settings.lua")
+    if not Canvas.drawControl then
+        dofile(self.path .. "/control.lua")(Canvas, { S = S, BLACK = BLACK, WHITE = WHITE, GREY = GREY, LIGHT = LIGHT })
+    end
     if not Canvas.buildToday then
         dofile(self.path .. "/dash.lua")(Canvas, {
             N = N, px = px, py = py, face = face, wrap = wrap, exists = exists,
@@ -849,6 +862,7 @@ end
 
 function SelfV2:onDispatcherRegisterActions()
     Dispatcher:registerAction("selfv2_home", { category = "none", event = "SelfV2Home", title = _("self.v2 Home"), general = true })
+    Dispatcher:registerAction("selfv2_control", { category = "none", event = "SelfV2Control", title = _("self.v2 Control centre"), general = true })
 end
 
 function SelfV2:onResume()
@@ -859,6 +873,12 @@ function SelfV2:onToggleNightMode()
     if self.canvas and self.canvas.is_open then
         UIManager:scheduleIn(0.2, function() self.canvas:rebuild("full") end)
     end
+end
+
+function SelfV2:onSelfV2Control()
+    self:showHome()
+    if self.canvas then self.canvas:openControl() end
+    return true
 end
 
 function SelfV2:onSelfV2Home()
@@ -1005,6 +1025,12 @@ function SelfV2:settingsDialog(canvas)
             { btn(G_reader_settings:nilOrTrue("selfv2_home_after_book") and _("Home after a book: on") or _("Home after a book: off"),
                 function() G_reader_settings:flipNilOrTrue("selfv2_home_after_book") end),
               btn(_("Restart KOReader"), function() if UIManager.restartKOReader then UIManager:restartKOReader() end end) },
+            { btn(_("Control centre"), function() canvas:openControl() end),
+              btn(_("Blackhole"), function()
+                local ConfirmBox = require("ui/widget/confirmbox")
+                UIManager:show(ConfirmBox:new{ text = _("Blackhole: close KOReader and go back to the Kindle's own home screen?"),
+                    ok_text = _("Exit"), ok_callback = function() UIManager:quit() end })
+              end) },
             { btn(_("Close"), function() end) },
         },
     }

@@ -20,15 +20,15 @@ local M = {}
 
 ---------------------------------------------------------------- greeting
 
--- Changes with the time of day (and says hello differently at night and on Sundays).
+-- Changes with the time of day.
 function M.greeting()
     local h = tonumber(os.date("%H"))
     local wday = tonumber(os.date("%w"))
-    if h < 4 then return "STILL UP," end
-    if h < 12 then return wday == 0 and "HAPPY SUNDAY," or "GOOD MORNING," end
-    if h < 17 then return "GOOD AFTERNOON," end
-    if h < 21 then return "GOOD EVENING," end
-    return "GOOD NIGHT,"
+    if h >= 1 and h < 4 then return "UP LATE?" end
+    if h >= 4 and h < 12 then return wday == 0 and "HAPPY SUNDAY," or "GOOD MORNING," end
+    if h >= 12 and h < 17 then return "GOOD AFTERNOON," end
+    if h >= 17 and h < 23 then return "GOOD EVENING," end
+    return "GOOD NIGHT,"  -- 11 pm to 1 am
 end
 
 ---------------------------------------------------------------- light / dark
