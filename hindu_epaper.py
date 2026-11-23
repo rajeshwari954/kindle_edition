@@ -83,9 +83,9 @@ def _photo(base: str, ref: str) -> bytes | None:
         from PIL import Image, ImageOps
         raw = _get(base + urllib.parse.quote(ref.split("?")[0], safe="/+"))
         im = ImageOps.grayscale(Image.open(io.BytesIO(raw)))
-        im.thumbnail((600, 600))
+        im.thumbnail((520, 520))
         out = io.BytesIO()
-        im.save(out, "JPEG", quality=62, optimize=True)
+        im.save(out, "JPEG", quality=58, optimize=True)
         return out.getvalue()
     except Exception:
         return None
