@@ -45,8 +45,8 @@ end
 -- the little handle at the top of every self.v2 screen
 function Canvas:drawHandle()
     if self.control or self.sheet then return end
-    self:box(349, 6, 60, 6, GREY, 3)
-    self:zone({ 300, 0, 158, 17 }, function() self:openControl() end)
+    self:box(319, 6, 120, 10, BLACK, 5)
+    self:zone({ 290, 0, 178, 19 }, function() self:openControl() end)
 end
 
 function Canvas:openControl()

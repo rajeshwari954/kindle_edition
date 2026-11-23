@@ -1008,8 +1008,11 @@ end
 function SelfV2:settingsDialog(canvas)
     local dlg
     local function btn(text, cb) return { text = text, callback = function() UIManager:close(dlg); cb() end } end
+    local fh = io.open(plugin_dir .. "/version.txt", "r")
+    local ver = fh and (fh:read("*l") or "") or "dev"
+    if fh then fh:close() end
     dlg = ButtonDialog:new{
-        title = _("Settings"),
+        title = _("Settings") .. "  ·  version " .. ver,
         buttons = {
             { btn(S.isDark() and _("Light mode") or _("Dark mode"), function() S.toggleDark(self) end),
               btn(_("Wi-Fi networks"), function() S.wifiMenu(self) end) },
