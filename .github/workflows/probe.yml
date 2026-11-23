@@ -6,7 +6,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: |
-          curl -s -A "Mozilla/5.0 (compatible; kindle-edition)" https://t.me/s/UPSCprepIAS -o page.html
+          curl -sL -A "Mozilla/5.0 (compatible; kindle-edition)" -w "status %{http_code} final %{url_effective}\n" https://t.me/s/UPSCprepIAS -o page.html
           wc -c page.html
           python3 - <<'PY'
           import re, html
