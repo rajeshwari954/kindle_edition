@@ -412,9 +412,27 @@ end
 
 ---------------------------------------------------------------- substacks
 
+function Canvas:showFollowing()
+    local list = self.manifest and self.manifest.substack_following or {}
+    local lines = {}
+    for _i, f in ipairs(list) do table.insert(lines, "• " .. (f.name or "") .. "  —  " .. (f.area or "")) end
+    if #lines == 0 then table.insert(lines, "Nothing yet. Tap Download on Home first.") end
+    table.insert(lines, "")
+    table.insert(lines, "To add a Substack, subscribe to it in the Substack app or website. It appears here the next morning. Unsubscribe there to remove it.")
+    local ok, TextViewer = pcall(require, "ui/widget/textviewer")
+    if ok then
+        UIManager:show(TextViewer:new{ title = "Following · " .. #list, text = table.concat(lines, "\n") })
+    else
+        UIManager:show(InfoMessage:new{ text = table.concat(lines, "\n") })
+    end
+end
+
 function Canvas:buildSubs()
     local L = self.L.subs
     self:zone(L.back, function() self:go("home") end)
+    local nfollow = #(self.manifest and self.manifest.substack_following or {})
+    self:pill("Following · " .. nfollow, 548, 126, 32, "outline", 13, 150)
+    self:zone({ 548, 120, 160, 44 }, function() self:showFollowing() end)
     local d = self:isToday() and self:files("substacks")[1] or nil
     local posts = d and d.posts or {}
     local st = readState()
@@ -424,7 +442,7 @@ function Canvas:buildSubs()
     if #posts == 0 then
         self:text("No new posts today", "sans", 16, L.sub[1], L.sub[2], GREY)
         self:lines("Nothing new yet", "serif", 26, pk[1] + 22, pk[2] + 60, 640, 1, WHITE)
-        self:lines("New posts arrive with the morning papers. Send Claude the Substacks you follow to add them.", "sans", 17, 52, L.rows_y + 10, 620, 4, GREY, 26)
+        self:lines("New posts from the Substacks you follow arrive with the morning papers. Tap Following to see the list.", "sans", 17, 52, L.rows_y + 10, 620, 4, GREY, 26)
         return
     end
     local path = FOLDER .. "/" .. d.file

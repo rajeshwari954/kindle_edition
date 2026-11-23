@@ -57,8 +57,24 @@ papers:
     sections:
       - { name: Latest, url: "https://www.livelaw.in/google_feeds.xml" }
 
-# Add each Substack you follow. area = the Reading Log area its posts are filed under.
+# Substacks: everything you subscribe to on Substack is picked up automatically every morning
+# from your public profile. Subscribe or unsubscribe in the Substack app; the Kindle follows along.
 substacks:
   texture: lace
-  feeds: []
-  # - { name: "Example", url: "https://example.substack.com/feed", area: "Finance & Economics" }
+  profile: rajeshwari954
+  exclude: [post]            # subdomains to skip (The Substack Post is Substack's own blog)
+  default_area: Current Affairs
+  areas:                     # Reading Log area for each Substack (by subdomain); new ones are sorted by Claude
+    theartofbranding: Finance & Economics
+    bhagavadgitadaily: Philosophy & Psychology
+    mauvesailor: Philosophy & Psychology
+    thedailybriefing: Finance & Economics
+    fiveminutereads1: Philosophy & Psychology
+    bariweiss: Current Affairs
+    indiangeopolitics: Geopolitics & History
+    themuseandthemelody: Philosophy & Psychology
+    pibindia: Current Affairs
+    quiethustle2: Philosophy & Psychology
+    rajshamani: Finance & Economics
+    stoicmanual: Philosophy & Psychology
+  feeds: []                  # extra feeds not on Substack: - { name: "X", url: "https://…/feed", area: "…" }

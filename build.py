@@ -117,6 +117,60 @@ def collect(sections, per_section, since, fetch_full=True):
     return stories
 
 
+def substack_follows(subs, model):
+    """Every publication the profile subscribes to, as feed entries."""
+    profile = subs.get("profile")
+    if not profile:
+        return []
+    try:
+        r = requests.get(f"https://substack.com/api/v1/user/{profile}/public_profile", headers={"User-Agent": UA}, timeout=25)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        print(f"  ! couldn't read Substack follows for {profile}: {e}", file=sys.stderr)
+        return []
+    exclude = set(subs.get("exclude") or [])
+    areas = subs.get("areas") or {}
+    out = []
+    for item in data.get("subscriptions") or []:
+        pub = item.get("publication") or item
+        sub = pub.get("subdomain")
+        if not sub or sub in exclude:
+            continue
+        url = f"https://{sub}.substack.com/feed"  # redirects to a custom domain when there is one
+        out.append({"name": pub.get("name") or sub, "url": url, "sub": sub, "area": areas.get(sub)})
+    new = [f for f in out if not f["area"]]
+    if new:
+        guessed = classify_areas(new, model)
+        for f in new:
+            f["area"] = guessed.get(f["sub"]) or subs.get("default_area", "Current Affairs")
+            print(f"  + new Substack {f['name']} → {f['area']}")
+    return out
+
+
+AREAS = ["Finance & Economics", "Geopolitics & History", "Current Affairs", "Case Laws & Judgements",
+         "Health Sciences", "Philosophy & Psychology"]
+
+
+def classify_areas(feeds, model):
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        return {}
+    listing = "\n".join(f"{f['sub']}: {f['name']}" for f in feeds)
+    prompt = (f"Assign each newsletter to one reading area from {AREAS}. "
+              'Reply with JSON only: {"subdomain": "area", ...}\n\n' + listing)
+    try:
+        import anthropic
+        msg = anthropic.Anthropic(api_key=key).messages.create(model=model, max_tokens=800, thinking={"type": "disabled"},
+                                                                 messages=[{"role": "user", "content": prompt}])
+        txt = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+        got = json.loads(re.search(r"\{.*\}", txt, re.S).group(0))
+        return {k: v for k, v in got.items() if v in AREAS}
+    except Exception as e:
+        print(f"  ! area guess failed: {e}", file=sys.stderr)
+        return {}
+
+
 # ---------------------------------------------------------------- summary
 
 def pick_highlights(paper, stories, model):
@@ -430,7 +484,8 @@ def main():
             print(f"    · [{p.get('tag', '')}] {stories[p['i']]['title'][:90]} — {p.get('why', '')}")
 
     subs = (cfg.get("substacks") or {})
-    feeds = subs.get("feeds") or []
+    feeds = substack_follows(subs, cfg.get("summary_model", "claude-haiku-5-5")) + (subs.get("feeds") or [])
+    following = [{"name": f["name"], "area": f.get("area", "")} for f in feeds]
     if feeds:
         print("• Substacks")
         posts = []
@@ -453,7 +508,10 @@ def main():
                 "posts": [{"title": p["title"], "pub": p["section"], "area": p["area"], "summary": p["summary"], "frag": frags.get(i),
                            "mins": p["mins"]} for i, p in enumerate(posts)],
             })
-            print(f"  {len(posts)} posts")
+            print(f"  {len(posts)} posts from {len(feeds)} Substacks")
+        else:
+            print(f"  no new posts from {len(feeds)} Substacks")
+    manifest["substack_following"] = following  # shown on the Kindle's Substacks page
 
     out.mkdir(parents=True, exist_ok=True)
     (out / "today.json").write_text(json.dumps(manifest, indent=1, ensure_ascii=False))

@@ -108,6 +108,7 @@ function DailyReads:download(after)
     lfs.mkdir(FOLDER)
     local got, have, failed = 0, 0, 0
     for _i, f in ipairs(manifest.files) do
+      if f.file and f.url then
         local dest = FOLDER .. "/" .. f.file
         if lfs.attributes(dest, "mode") == "file" then
             have = have + 1
@@ -123,6 +124,7 @@ function DailyReads:download(after)
                 failed = failed + 1
             end
         end
+      end
     end
     -- keep a copy of the manifest for the dashboard page (headlines, counts)
     local mf = io.open(FOLDER .. "/today.json", "w")
