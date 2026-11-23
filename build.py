@@ -137,7 +137,7 @@ def pick_highlights(paper, stories, model):
     try:
         import anthropic
         msg = anthropic.Anthropic(api_key=key).messages.create(
-            model=model, max_tokens=900, messages=[{"role": "user", "content": prompt}])
+            model=model, max_tokens=2500, thinking={"type": "disabled"}, messages=[{"role": "user", "content": prompt}])
         txt = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
         m = re.search(r"\{.*\}", txt, re.S)
         if not m:
@@ -164,7 +164,7 @@ def summarize_posts(posts, model):
               "not a teaser. Reply with JSON only: {\"s\":[\"...\", ...]} in the same order.\n\n" + listing)
     try:
         import anthropic
-        msg = anthropic.Anthropic(api_key=key).messages.create(model=model, max_tokens=1500, messages=[{"role": "user", "content": prompt}])
+        msg = anthropic.Anthropic(api_key=key).messages.create(model=model, max_tokens=3000, thinking={"type": "disabled"}, messages=[{"role": "user", "content": prompt}])
         txt = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
         got = json.loads(re.search(r"\{.*\}", txt, re.S).group(0))["s"]
         return [g if isinstance(g, str) and g.strip() else o for g, o in zip(got + [None] * len(out), out)][:len(out)]
