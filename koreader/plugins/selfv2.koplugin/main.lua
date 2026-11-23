@@ -289,7 +289,11 @@ function Canvas:onSwipeCanvas(_args, ges)
     end
     return true
 end
-function Canvas:onHoldCanvas() return true end
+-- Safety net: press and hold anywhere to open the control centre (Home, Blackhole, etc.).
+function Canvas:onHoldCanvas()
+    if self.openControl and not self.control then self:openControl() end
+    return true
+end
 
 function Canvas:onTapCanvas(_args, ges)
     local p = ges and ges.pos
