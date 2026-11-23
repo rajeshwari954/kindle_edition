@@ -141,6 +141,60 @@ local function openBook(file, frag)
     UIManager:scheduleIn(1, jump)
 end
 
+---------------------------------------------------------------- library data
+
+local DOCS = "/mnt/us/documents"
+local BOOK_EXT = { epub = true, pdf = true, mobi = true, azw3 = true, azw = true, fb2 = true, txt = true,
+    cbz = true, djvu = true, docx = true, html = true, rtf = true }
+
+local function scanBooks()
+    local out = {}
+    local function walk(dir, depth)
+        if depth > 4 then return end
+        local ok, iter, obj = pcall(lfs.dir, dir)
+        if not ok then return end
+        for name in iter, obj do
+            if name:sub(1, 1) ~= "." and name ~= "Daily reads" and not name:match("%.sdr$") then
+                local path = dir .. "/" .. name
+                local attr = lfs.attributes(path)
+                if attr and attr.mode == "directory" then
+                    walk(path, depth + 1)
+                elseif attr then
+                    local ext = name:match("%.([%w]+)$")
+                    if ext and BOOK_EXT[ext:lower()] then
+                        table.insert(out, { path = path, name = name, ext = ext:upper(), mtime = attr.modification or 0 })
+                    end
+                end
+            end
+        end
+    end
+    walk(DOCS, 0)
+    return out
+end
+
+local function prettyName(name)
+    return (name:gsub("%.[%w]+$", ""):gsub("[_]+", " "):gsub("%s+", " "))
+end
+
+-- Title, author and progress, from KOReader's own records when the book has been opened before.
+local info_cache = {}
+local function bookInfo(b)
+    if info_cache[b.path] then return info_cache[b.path] end
+    local inf = { title = prettyName(b.name), author = "", pct = nil }
+    local ok, DocSettings = pcall(require, "docsettings")
+    if ok then
+        local ok2, ds = pcall(DocSettings.open, DocSettings, b.path)
+        if ok2 and ds then
+            local props = ds:readSetting("doc_props") or {}
+            if props.title and props.title ~= "" then inf.title = props.title end
+            if props.authors and props.authors ~= "" then inf.author = (props.authors:gsub("\n", ", ")) end
+            inf.pct = ds:readSetting("percent_finished")
+        end
+    end
+    info_cache[b.path] = inf
+    return inf
+end
+
 ---------------------------------------------------------------- canvas
 
 local Canvas = InputContainer:extend{
@@ -192,7 +246,7 @@ function Canvas:pill(str, x, y, h, style, size, min_w)
         fgcolor = style == "dark" and WHITE or BLACK }
     local w = math.max(tw:getSize().w + px(28), min_w and px(min_w) or 0)
     local frame = FrameContainer:new{
-        background = style == "dark" and BLACK or WHITE,
+        background = style == "dark" and BLACK or (style == "grey" and LIGHT or WHITE),
         bordersize = style == "outline" and 2 or 0,
         color = BLACK,
         radius = math.floor(py(h) / 2),
@@ -246,12 +300,13 @@ function Canvas:rebuild(refresh)
     -- (shown as-is), and draw text that sits on a texture in black, which night mode turns white.
     self.night = G_reader_settings:isTrue("night_mode")
     self.texfg = self.night and BLACK or WHITE
-    local bg = ({ home = "home", papers = "papers", subs = "substacks" })[self.mode] .. (self.night and "_night.png" or ".png")
+    local bg = ({ home = "home", papers = "papers", subs = "substacks", library = "library" })[self.mode] .. (self.night and "_night.png" or ".png")
     if not exists(plugin_dir .. "/screens/" .. bg) then bg = bg:gsub("_night", "") end
     self:put(ImageWidget:new{ file = plugin_dir .. "/screens/" .. bg, width = Screen:getWidth(), height = Screen:getHeight(),
         file_do_cache = false, original_in_nightmode = true }, 0, 0)
     if self.mode == "home" then self:buildHome()
     elseif self.mode == "papers" then self:buildPapers()
+    elseif self.mode == "library" then self:buildLibrary()
     else self:buildSubs() end
     self[1] = OverlapGroup:new{ dimen = self.dimen:copy(), allow_mirroring = false, unpack(self.items) }
     if refresh then UIManager:setDirty(self, refresh) end
@@ -260,6 +315,7 @@ end
 function Canvas:go(mode)
     self.mode = mode
     self.sel, self.page = nil, 1
+    if mode == "library" then self.books, info_cache = nil, {} end
     self:rebuild("full")
 end
 
@@ -342,12 +398,7 @@ function Canvas:buildHome()
     self:zone(L.focus, soon)
     self:zone(L.papers, function() self:go("papers") end)
     self:zone(L.subs, function() self:go("subs") end)
-    self:zone(L.library, function()
-        self:close()
-        local FileManager = require("apps/filemanager/filemanager")
-        if FileManager.instance then pcall(function() FileManager.instance:onHome() end)
-        else FileManager:showFiles(G_reader_settings:readSetting("home_dir")) end
-    end)
+    self:zone(L.library, function() self:go("library") end)
     self:zone(L.download, function() self.plugin:download(function() self:rebuild("ui") end) end)
     self:zone(L.wifi, function() self.plugin:toggleWifi() end)
     self:zone(L.settings, function() self.plugin:settingsDialog(self) end)
@@ -413,6 +464,173 @@ function Canvas:buildPapers()
         self:zone({ 52, y - 4, 654, L.row_h - 8 }, function()
             if exists(path) then self:close(); openBook(path, hl.frag) end
         end)
+    end
+end
+
+---------------------------------------------------------------- library
+
+local SORTS = { "Recent", "Title", "Author", "Progress" }
+
+function Canvas:bar(x, y, w, pct)
+    local W, Hb = px(w), py(6)
+    self:put(FrameContainer:new{ background = LIGHT, bordersize = 0, radius = math.floor(Hb / 2), padding = 0, margin = 0,
+        Widget:new{ dimen = Geom:new{ w = W, h = Hb } } }, x, y)
+    local fw = math.max(Hb, math.floor(W * math.min(1, pct or 0)))
+    self:put(FrameContainer:new{ background = BLACK, bordersize = 0, radius = math.floor(Hb / 2), padding = 0, margin = 0,
+        Widget:new{ dimen = Geom:new{ w = fw, h = Hb } } }, x, y)
+end
+
+function Canvas:openFiles()
+    self:close()
+    local FileManager = require("apps/filemanager/filemanager")
+    if FileManager.instance then pcall(function() FileManager.instance:onHome() end)
+    else FileManager:showFiles(G_reader_settings:readSetting("home_dir")) end
+end
+
+function Canvas:searchDialog()
+    local InputDialog = require("ui/widget/inputdialog")
+    local st = self.lib
+    local dlg
+    dlg = InputDialog:new{
+        title = _("Search your library"),
+        input = st.query or "",
+        input_hint = _("Title, author or file name"),
+        buttons = { {
+            { text = _("Clear"), callback = function() UIManager:close(dlg); st.query = nil; st.page = 1; self:rebuild("ui") end },
+            { text = _("Search"), is_enter_default = true, callback = function()
+                local q = dlg:getInputText()
+                UIManager:close(dlg)
+                st.query = (q and q:match("%S")) and q or nil
+                st.page = 1
+                self:rebuild("ui")
+            end },
+        } },
+    }
+    UIManager:show(dlg)
+    dlg:onShowKeyboard()
+end
+
+function Canvas:buildLibrary()
+    local L = self.L.library
+    self.lib = self.lib or { sort = 1, page = 1 }
+    local st = self.lib
+    self.books = self.books or scanBooks()
+    local books = self.books
+    self:zone(L.back, function() self:go("home") end)
+
+    -- make sure each collection has its folder, so there's somewhere to put books
+    for _i, fname in ipairs(L.folders) do
+        local path = DOCS .. "/" .. fname
+        if lfs.attributes(path, "mode") ~= "directory" then lfs.mkdir(path) end
+    end
+
+    -- reading now: your three most recent books (papers excluded)
+    local reading = {}
+    local ok, ReadHistory = pcall(require, "readhistory")
+    for _i, h in ipairs(ok and ReadHistory.hist or {}) do
+        if #reading >= 3 then break end
+        if h.file and not h.file:find("/Daily reads/", 1, true) and exists(h.file) then
+            table.insert(reading, { path = h.file, name = h.file:match("([^/]+)$") })
+        end
+    end
+    self:text(#books .. " books · " .. #reading .. " reading now", "sans", 16, L.sub[1], L.sub[2], GREY)
+    self:pill("All files", L.files[1], L.files[2], L.files[4], "outline", 15, L.files[3])
+    self:zone(L.files, function() self:openFiles() end)
+
+    local sx, sy = L.search[1], L.search[2]
+    self:text(st.query and ("“" .. st.query .. "”") or "Search books and authors", "sans", 17, sx + 54, sy + 13, GREY, false, L.search[3] - 70)
+    self:zone(L.search, function() self:searchDialog() end)
+    self:pill(SORTS[st.sort], L.sort[1], L.sort[2], L.sort[4], "dark", 15, L.sort[3])
+    self:zone(L.sort, function() st.sort = st.sort % #SORTS + 1; st.page = 1; self:rebuild("ui") end)
+
+    for i, rect in ipairs(L.books) do
+        local b = reading[i]
+        if b then
+            local inf = bookInfo(b)
+            self:lines(inf.title, "serif", 15, rect[1] + 62, rect[2] + 12, 136, 3, BLACK, 19)
+            if inf.author ~= "" then self:lines(inf.author, "sans", 11, rect[1] + 62, rect[2] + 72, 136, 1, GREY) end
+            self:bar(rect[1] + 12, rect[2] + 100, 150, inf.pct)
+            self:text(inf.pct and (math.floor(inf.pct * 100) .. "%") or "new", "sans", 12, rect[1] + 168, rect[2] + 94, BLACK, true)
+            self:zone(rect, function() self:close(); openBook(b.path) end)
+        elseif i == 1 then
+            self:lines("Nothing open yet. Pick a book below.", "sans", 13, rect[1] + 62, rect[2] + 20, 136, 4, GREY, 18)
+        end
+    end
+
+    -- collections
+    local counts = {}
+    for i, fname in ipairs(L.folders) do
+        local prefix = DOCS .. "/" .. fname .. "/"
+        local n = 0
+        for _j, b in ipairs(books) do if b.path:sub(1, #prefix) == prefix then n = n + 1 end end
+        counts[i] = n
+        local r = L.cols[i]
+        self:text(n .. (n == 1 and " book" or " books"), "sans", 12, r[1] + r[3] - 70, r[2] + 16, GREY)
+        if st.col == i then self:outline(r, 22) end
+        self:zone(r, function()
+            if st.col == i then st.col = nil else st.col = i end
+            st.page = 1
+            self:rebuild("ui")
+        end)
+    end
+
+    -- the list
+    local list = {}
+    local prefix = st.col and (DOCS .. "/" .. L.folders[st.col] .. "/") or nil
+    local q = st.query and st.query:lower() or nil
+    for _i, b in ipairs(books) do
+        local keep = true
+        if prefix and b.path:sub(1, #prefix) ~= prefix then keep = false end
+        if keep and q then
+            local inf = bookInfo(b)
+            keep = (b.name:lower():find(q, 1, true) or inf.title:lower():find(q, 1, true) or inf.author:lower():find(q, 1, true)) and true or false
+        end
+        if keep then table.insert(list, b) end
+    end
+    local sortkey = SORTS[st.sort]
+    table.sort(list, function(a, b)
+        if sortkey == "Title" then return bookInfo(a).title:lower() < bookInfo(b).title:lower() end
+        if sortkey == "Author" then
+            local x, y = bookInfo(a).author:lower(), bookInfo(b).author:lower()
+            if x == y then return bookInfo(a).title:lower() < bookInfo(b).title:lower() end
+            if x == "" then return false end
+            if y == "" then return true end
+            return x < y
+        end
+        if sortkey == "Progress" then return (bookInfo(a).pct or -1) > (bookInfo(b).pct or -1) end
+        return a.mtime > b.mtime
+    end)
+
+    local title = q and ("Results · " .. #list) or (st.col and (L.names[st.col] .. " · " .. #list) or "Recently added")
+    self:lines(title, "serif", 24, 52, L.panel[2] + 14, 500, 1)
+    local per = L.rows
+    local pages = math.max(1, math.ceil(#list / per))
+    if st.page > pages then st.page = pages end
+    if pages > 1 then
+        self:text(st.page .. "/" .. pages, "sans", 13, L.btn_prev[1] - 44, L.btn_prev[2] + 10, GREY)
+        self:pill("‹", L.btn_prev[1], L.btn_prev[2], L.btn_prev[4], "outline", 18, L.btn_prev[3])
+        self:pill("›", L.btn_next[1], L.btn_next[2], L.btn_next[4], "dark", 18, L.btn_next[3])
+        self:zone(L.btn_prev, function() if st.page > 1 then st.page = st.page - 1; self:rebuild("ui") end end)
+        self:zone(L.btn_next, function() if st.page < pages then st.page = st.page + 1; self:rebuild("ui") end end)
+    end
+    if #list == 0 then
+        local msg = q and "Nothing matches that search." or
+            (st.col and ("No books here yet. Put them in the “" .. L.folders[st.col] .. "” folder in your documents.") or "No books yet.")
+        self:lines(msg, "sans", 15, 52, L.rows_y + 4, 640, 3, GREY, 22)
+    end
+    for k = 1, per do
+        local b = list[(st.page - 1) * per + k]
+        if not b then break end
+        local y = L.rows_y + (k - 1) * L.row_h
+        local inf = bookInfo(b)
+        self:lines(inf.title, "serif", 18, 52, y, 560, 1)
+        local meta = {}
+        if inf.author ~= "" then table.insert(meta, inf.author) end
+        if inf.pct then table.insert(meta, math.floor(inf.pct * 100) .. "% read") end
+        table.insert(meta, (os.date("added %d %b", b.mtime):gsub(" 0", " ")))
+        self:lines(table.concat(meta, " · "), "sans", 13, 52, y + 27, 560, 1, GREY)
+        self:pill(b.ext, 640, y + 4, 26, "grey", 11, 60)
+        self:zone({ 40, y - 6, 680, L.row_h - 4 }, function() self:close(); openBook(b.path) end)
     end
 end
 

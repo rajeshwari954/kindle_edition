@@ -109,7 +109,12 @@ function DailyReads:download(after)
     local got, have, failed = 0, 0, 0
     for _i, f in ipairs(manifest.files) do
       if f.file and f.url then
-        local dest = FOLDER .. "/" .. f.file
+        local dir = FOLDER
+        if f.folder then
+            dir = "/mnt/us/documents/" .. f.folder  -- e.g. Books: kept, not cleared on Sunday
+            lfs.mkdir(dir)
+        end
+        local dest = dir .. "/" .. f.file
         if lfs.attributes(dest, "mode") == "file" then
             have = have + 1
         else

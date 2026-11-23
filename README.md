@@ -41,3 +41,8 @@ Your edition address is then: `https://<your-username>.github.io/kindle-edition/
 `koreader/plugins/selfv2.koplugin` draws Home, Today's papers and Substacks. Backgrounds are baked by
 `python kindle/make_screens.py` (run it after changing the design, then commit).
 After the first install by cable, updates arrive over Wi-Fi: Home → Settings → Check for updates.
+
+## The Kindle's Gmail inbox (Substacks + books)
+Secrets `GMAIL_USER` and `GMAIL_APP_PASSWORD` let the morning job read a dedicated Gmail inbox:
+Substack newsletters sent there become the Substack digest; EPUB/PDF attachments go to the
+Kindle's `Books` folder (kept, not cleared on Sunday). Books stay available to download for 7 days.

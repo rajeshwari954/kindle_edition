@@ -490,7 +490,18 @@ def main():
     subs = (cfg.get("substacks") or {})
     feeds = substack_follows(subs, cfg.get("summary_model", "claude-haiku-5-5")) + (subs.get("feeds") or [])
     following = [{"name": f["name"], "area": f.get("area", "")} for f in feeds]
-    if feeds:
+
+    # the Kindle's own Gmail inbox: Substack emails + books sent as attachments
+    import mailbox
+    book_window = now - dt.timedelta(days=7)
+    mail_posts, books = mailbox.read_inbox(book_window, subs.get("areas") or {}, subs.get("names") or {})
+    for p in mail_posts:
+        p["body"] = clean_html(p["body"]) or "<p>Open the post online.</p>"
+        p["teaser"] = text_of(p["body"])[:320]
+        if not p.get("area"):
+            p["area"] = subs.get("default_area", "Current Affairs")
+
+    if feeds or mail_posts:
         print("• Substacks")
         posts = []
         for f in feeds:
@@ -498,6 +509,11 @@ def main():
             for p in got:
                 p["area"] = f.get("area", "")
             posts += got
+        seen_titles = {p["title"].lower() for p in posts}
+        for p in mail_posts:
+            if (p["when"] is None or p["when"] >= since) and p["title"].lower() not in seen_titles:
+                posts.append(p)
+                seen_titles.add(p["title"].lower())
         if posts:
             for p, summ in zip(posts, summarize_posts(posts, cfg.get("summary_model", "claude-haiku-5-5"))):
                 p["mins"] = max(1, round(len(text_of(p["body"]).split()) / 230))
@@ -516,6 +532,16 @@ def main():
         else:
             print(f"  no new posts from {len(feeds)} Substacks")
     manifest["substack_following"] = following  # shown on the Kindle's Substacks page
+
+    # books from the inbox go to the Books folder on the Kindle (kept, never cleared)
+    if books:
+        print(f"• Books: {len(books)}")
+        bdir = out / "books"
+        bdir.mkdir(parents=True, exist_ok=True)
+        for b in books:
+            (bdir / b["name"]).write_bytes(b["data"])
+            manifest["files"].append({"id": "book:" + b["name"], "kind": "book", "name": b["name"], "file": b["name"],
+                                      "url": "books/" + b["name"], "folder": "Books"})
 
     out.mkdir(parents=True, exist_ok=True)
     (out / "today.json").write_text(json.dumps(manifest, indent=1, ensure_ascii=False))

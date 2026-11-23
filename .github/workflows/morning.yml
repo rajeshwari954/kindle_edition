@@ -28,6 +28,8 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           EDITION_KEY: ${{ secrets.EDITION_KEY }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         run: |
           test -n "$EDITION_KEY" || { echo "Add the EDITION_KEY secret first"; exit 1; }
           python build.py --out "site/$EDITION_KEY"
