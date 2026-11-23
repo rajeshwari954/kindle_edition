@@ -69,6 +69,11 @@ function Canvas:dashFresh()
     return self.dash and self.dash.date == self:dday() and self.dash.loaded
 end
 
+function Canvas:homePill(r)
+    self:pill("‹ Home", r[1], r[2], r[4], "outline", 15, r[3])
+    self:zone({ r[1], r[2] - 6, r[3], r[4] + 12 }, function() self:go("home") end)
+end
+
 function Canvas:datePill(x, y, w, h)
     local label = (os.date("%a %d %b", N.dateTime(self:dday())):gsub(" 0", " "))
     self:pill(label, x, y, h, "light", 15, w)
@@ -248,6 +253,7 @@ function Canvas:buildToday()
     self:pill("Focus board", L.focus[1], L.focus[2], L.focus[4], "dark", 15, L.focus[3])
     self:zone(L.focus, function() UIManager:show(InfoMessage:new{ text = _("The Focus board is coming in a later update."), timeout = 3 }) end)
     self:datePill(L.date[1], L.date[2], L.date[3], L.date[4])
+    self:homePill(L.home)
     self:navBar("today", L)
     if not self:dashFresh() then
         self:lines("Loading from Notion…", "sans", 17, 52, L.grid_top + 20, 340, 1, GREY)
@@ -659,6 +665,7 @@ end
 function Canvas:buildCheckin()
     local L = self.L.checkin
     self:datePill(L.date[1], L.date[2], L.date[3], L.date[4])
+    self:homePill(L.home)
     self:navBar("checkin", L)
     if not self:dashFresh() then
         self:lines("Loading from Notion…", "sans", 17, 52, L.supp[2] + 60, 600, 1, GREY)

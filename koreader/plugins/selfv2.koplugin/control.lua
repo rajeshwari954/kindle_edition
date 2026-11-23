@@ -46,7 +46,7 @@ end
 function Canvas:drawHandle()
     if self.control or self.sheet then return end
     self:box(349, 6, 60, 6, GREY, 3)
-    self:zone({ 300, 0, 158, 34 }, function() self:openControl() end)
+    self:zone({ 300, 0, 158, 17 }, function() self:openControl() end)
 end
 
 function Canvas:openControl()
