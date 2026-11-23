@@ -73,6 +73,31 @@ function M.wifiMenu(plugin)
     UIManager:show(dlg)
 end
 
+---------------------------------------------------------------- airplane mode
+
+function M.isAirplane() return G_reader_settings:isTrue("selfv2_airplane") end
+
+function M.setAirplane(on)
+    local kindle = Device.isKindle and Device:isKindle()
+    if on then
+        if NetworkMgr:isWifiOn() then NetworkMgr:turnOffWifi(function() end) end
+        if kindle then os.execute("lipc-set-prop com.lab126.cmd wirelessEnable 0 >/dev/null 2>&1") end
+        G_reader_settings:saveSetting("selfv2_airplane", true)
+    else
+        if kindle then os.execute("lipc-set-prop com.lab126.cmd wirelessEnable 1 >/dev/null 2>&1") end
+        G_reader_settings:delSetting("selfv2_airplane")
+    end
+end
+
+-- Use instead of NetworkMgr:runWhenOnline, so airplane mode is respected.
+function M.online(cb)
+    if M.isAirplane() then
+        UIManager:show(InfoMessage:new{ text = _("Airplane mode is on. Turn it off in the control centre to connect."), timeout = 3 })
+        return
+    end
+    NetworkMgr:runWhenOnline(cb)
+end
+
 ---------------------------------------------------------------- reading font and size
 
 local SIZES = { { "Small", 20 }, { "Medium", 24 }, { "Large", 28 }, { "Extra large", 33 } }

@@ -113,7 +113,7 @@ end
 
 function Canvas:loadDash()
     if not N.token() then self.plugin:notionSetup(false) return end
-    NetworkMgr:runWhenOnline(function()
+    ctx.online(function()
         local busy = InfoMessage:new{ text = _("Loading from Notion…") }
         UIManager:show(busy)
         UIManager:forceRePaint()
@@ -155,7 +155,7 @@ function Canvas:loadDash()
 end
 
 function Canvas:write(fn, after)
-    NetworkMgr:runWhenOnline(function()
+    ctx.online(function()
         local ok, res = fn()
         if not ok then self:notionError(res) return end
         if after then after(res) end

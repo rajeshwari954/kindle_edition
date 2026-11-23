@@ -754,6 +754,7 @@ function SelfV2:init()
             N = N, px = px, py = py, face = face, wrap = wrap, exists = exists,
             BLACK = BLACK, WHITE = WHITE, GREY = GREY, LIGHT = LIGHT,
             timetable = dofile(self.path .. "/timetable.lua"),
+            online = function(cb) S.online(cb) end,
             greeting = S.greeting,
         })
     end
@@ -904,7 +905,7 @@ function SelfV2:download(after)
         UIManager:show(InfoMessage:new{ text = _("The Daily reads plugin isn't installed."), timeout = 4 })
         return
     end
-    NetworkMgr:runWhenOnline(function() self.ui.dailyreads:download(after) end)
+    S.online(function() self.ui.dailyreads:download(after) end)
 end
 
 function SelfV2:toggleWifi()
@@ -946,7 +947,7 @@ function SelfV2:checkUpdates()
         return
     end
     if not base:match("/$") then base = base .. "/" end
-    NetworkMgr:runWhenOnline(function()
+    S.online(function()
         local ltn12 = require("ltn12")
         local chunks = {}
         local code = httpGet(base .. "app/version.txt?t=" .. os.time(), ltn12.sink.table(chunks))

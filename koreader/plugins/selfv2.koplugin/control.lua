@@ -5,6 +5,7 @@ Installed onto Canvas by main.lua: dofile("control.lua")(Canvas, ctx).
 ]]
 
 local ConfirmBox = require("ui/widget/confirmbox")
+local Blitbuffer = require("ffi/blitbuffer")
 local Device = require("device")
 local InfoMessage = require("ui/widget/infomessage")
 local NetworkMgr = require("ui/network/manager")
@@ -61,8 +62,8 @@ end
 function Canvas:tile(x, y, w, h, title, sub, on, cb)
     self:box(x, y, w, h, on and BLACK or LIGHT, 24)
     local fg = on and WHITE or BLACK
-    self:text(title, "sans", 18, x + 18, y + h - 62, fg, true)
-    self:text(sub, "sans", 14, x + 18, y + h - 34, on and LIGHT or GREY)
+    self:text(title, "sans", 17, x + 16, y + h - 58, fg, true)
+    self:text(sub, "sans", 13, x + 16, y + h - 32, on and LIGHT or GREY)
     self:zone({ x, y, w, h }, cb)
 end
 
@@ -83,23 +84,47 @@ function Canvas:drawControl()
         self:text(cap .. "%" .. (charging and " · charging" or ""), "sans", 14, 608, 86, GREY, true)
     end
 
-    -- four tiles
-    local wifi = NetworkMgr:isWifiOn()
-    local dark = S.isDark()
-    local tw, th = 339, 150
-    self:tile(30, 124, tw, th, "Wi-Fi", wifi and "On · tap for networks" or "Off · tap to turn on", wifi, function()
-        if wifi then S.wifiMenu(self.plugin) else NetworkMgr:turnOnWifi(function() self:rebuild("ui") end) end
+    -- small round power button: sleep, showing your lock screen
+    self:box(530, 34, 56, 56, BLACK, 28)
+    self:box(545, 49, 26, 26, nil, 13, 3, WHITE)
+    self:box(553, 44, 10, 14, BLACK)
+    self:box(556, 43, 4, 18, WHITE, 2)
+    self:zone({ 522, 26, 72, 72 }, function()
+        self.control = nil
+        self:rebuild("ui")
+        if UIManager.suspend then UIManager:suspend() end
     end)
-    self:tile(389, 124, tw, th, dark and "Dark mode" or "Light mode", "Tap to switch", dark, function()
+
+    -- six tiles
+    local air = S.isAirplane()
+    local wifi = (not air) and NetworkMgr:isWifiOn()
+    local dark = S.isDark()
+    local tw, th, gap = 220, 140, 19
+    local col = function(i) return 30 + (i - 1) * (tw + gap) end
+    self:tile(col(1), 124, tw, th, "Wi-Fi", air and "Off · airplane" or (wifi and "On · networks" or "Off"), wifi, function()
+        if air then
+            UIManager:show(InfoMessage:new{ text = _("Turn airplane mode off first."), timeout = 2 })
+        elseif wifi then S.wifiMenu(self.plugin)
+        else NetworkMgr:turnOnWifi(function() self:rebuild("ui") end) end
+    end)
+    self:tile(col(2), 124, tw, th, "Airplane", air and "On" or "Off", air, function()
+        S.setAirplane(not air)
+        self:rebuild("ui")
+    end)
+    self:tile(col(3), 124, tw, th, dark and "Dark mode" or "Light mode", "Tap to switch", dark, function()
         self.control = true
         S.toggleDark(self.plugin)
     end)
-    self:tile(30, 290, tw, th, "Today's reads", "Download papers & Substacks", false, function()
+    self:tile(col(1), 280, tw, th, "Today's reads", "Download", false, function()
         self.control = nil
         self.plugin:download(function() self:rebuild("ui") end)
     end)
-    self:tile(389, 290, tw, th, "Lock", S.hasPin() and "Lock now with your passcode" or "Set a passcode first", false, function()
+    self:tile(col(2), 280, tw, th, "Lock", S.hasPin() and "Lock now" or "Set passcode", false, function()
         if S.hasPin() then self.control = nil; self:rebuild("ui"); S.lock() else S.pinMenu() end
+    end)
+    self:tile(col(3), 280, tw, th, "Home", "self.v2 Home", false, function()
+        self.control = nil
+        if self.mode ~= "home" then self:go("home") else self:rebuild("ui") end
     end)
 
     -- brightness
@@ -117,19 +142,14 @@ function Canvas:drawControl()
         self:zone({ 108, 484, 542, 60 }, function() end)
     end
 
-    -- sleep, restart, blackhole
-    local by, bw = 566, 220
-    self:pill("Sleep", 30, by, 52, "outline", 17, bw)
+    -- restart, blackhole
+    local by, bw = 566, 339
+    self:pill("Restart KOReader", 30, by, 52, "outline", 17, bw)
     self:zone({ 30, by, bw, 52 }, function()
-        self.control = nil
-        if UIManager.suspend then UIManager:suspend() end
-    end)
-    self:pill("Restart", 269, by, 52, "outline", 17, bw)
-    self:zone({ 269, by, bw, 52 }, function()
         if UIManager.restartKOReader then UIManager:restartKOReader() end
     end)
-    self:pill("Blackhole", 508, by, 52, "dark", 17, bw)
-    self:zone({ 508, by, bw, 52 }, function()
+    self:pill("Blackhole", 389, by, 52, "dark", 17, bw)
+    self:zone({ 389, by, bw, 52 }, function()
         UIManager:show(ConfirmBox:new{
             text = _("Blackhole: close KOReader and go back to the Kindle's own home screen?"),
             ok_text = _("Exit"),
