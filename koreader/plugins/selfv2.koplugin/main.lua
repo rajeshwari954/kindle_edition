@@ -566,7 +566,18 @@ function Canvas:buildPapers()
     self:text("The top 5 from " .. f.name, "sans", 14, L.panel_sub[1], L.panel_sub[2], GREY)
     local key = date .. "/" .. f.id
     self:pill("Open paper", L.btn_open[1], L.btn_open[2], L.btn_open[4], "dark", 14, L.btn_open[3])
-    self:zone(L.btn_open, function() if exists(path) then self:close(); openBook(path) end end)
+    local function openPaper(frag)
+        if not exists(path) then return end
+        local fh = io.open(path, "rb")
+        local head = fh and fh:read(5)
+        if fh then fh:close() end
+        if head == "SVPK1" then
+            UIManager:show(InfoMessage:new{ text = _("This paper is still locked. Restart KOReader, then tap Download today's reads to unlock it.") })
+            return
+        end
+        self:close(); openBook(path, frag)
+    end
+    self:zone(L.btn_open, function() openPaper() end)
     self:pill(st[key] and "Read" or "Mark read", L.btn_read[1], L.btn_read[2], L.btn_read[4], "outline", 14, L.btn_read[3])
     self:zone(L.btn_read, function() setRead(key, not st[key]); self:rebuild("ui") end)
 
@@ -577,9 +588,7 @@ function Canvas:buildPapers()
         local tag = (hl.tag or ""):upper()
         local why = (tag ~= "" and (tag .. "  ·  ") or "") .. (hl.why or "")
         self:lines(why, "sans", 14, L.row_x, y + 32, L.row_w, 2, GREY, 20)
-        self:zone({ 52, y - 4, 654, L.row_h - 8 }, function()
-            if exists(path) then self:close(); openBook(path, hl.frag) end
-        end)
+        self:zone({ 52, y - 4, 654, L.row_h - 8 }, function() openPaper(hl.frag) end)
     end
 end
 

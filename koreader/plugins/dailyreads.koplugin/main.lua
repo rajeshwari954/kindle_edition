@@ -159,7 +159,18 @@ function DailyReads:download(after)
             lfs.mkdir(dir)
         end
         local dest = dir .. "/" .. f.file
-        if lfs.attributes(dest, "mode") == "file" then
+        local fh0 = lfs.attributes(dest, "mode") == "file" and io.open(dest, "rb")
+        local head = fh0 and fh0:read(5)
+        if fh0 then fh0:close() end
+        local key0 = G_reader_settings:readSetting("selfv2_paper_key")
+        if head == "SVPK1" and key0 and key0 ~= "" then
+            -- downloaded earlier but still locked (an older version saved it): unlock it now
+            local okk, why = unseal(dest, dest .. ".open", key0)
+            if okk then os.remove(dest); os.rename(dest .. ".open", dest); got = got + 1
+            else failed = failed + 1; if why == "wrong passphrase" then badkey = true end end
+        elseif head == "SVPK1" then
+            locked = (locked or 0) + 1
+        elseif head then
             have = have + 1
         else
             local tmp = dest .. ".part"
