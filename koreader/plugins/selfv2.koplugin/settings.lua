@@ -140,9 +140,29 @@ function M.useLockImage(quiet)
     return true
 end
 
--- Done once, automatically, the first time self.v2 runs.
+-- Sleep screen: the cover of the book you're reading (until we design new sleep images).
+function M.useBookCover(quiet)
+    G_reader_settings:saveSetting("screensaver_type", "cover")
+    G_reader_settings:saveSetting("screensaver_show_message", false)
+    G_reader_settings:saveSetting("selfv2_sleep_set", true)
+    if not quiet then
+        UIManager:show(InfoMessage:new{ text = _("Sleep screen set to the cover of your current book."), timeout = 3 })
+    end
+end
+
+-- Done once: take the collage off the sleep screen. It's moved (not deleted) to linkss/screensavers_off,
+-- so the Kindle's own sleep screen doesn't show it either.
 function M.ensureLockImage()
-    if not G_reader_settings:isTrue("selfv2_sleep_set") then M.useLockImage(true) end
+    if G_reader_settings:isTrue("selfv2_sleep_off_v1") then return end
+    local lfs = require("libs/libkoreader-lfs")
+    local off = M.SLEEP_DIR .. "_off"
+    local imgs = sleepImages()
+    if #imgs > 0 then
+        if lfs.attributes(off, "mode") ~= "directory" then lfs.mkdir(off) end
+        for _i, f in ipairs(imgs) do os.rename(M.SLEEP_DIR .. "/" .. f, off .. "/" .. f) end
+    end
+    M.useBookCover(true)
+    G_reader_settings:saveSetting("selfv2_sleep_off_v1", true)
 end
 
 ---------------------------------------------------------------- reading font and size

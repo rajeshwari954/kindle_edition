@@ -1339,7 +1339,7 @@ function SelfV2:settingsDialog(canvas)
               btn(_("Text size"), function() S.sizeMenu() end) },
             { btn(S.hasPin() and _("Passcode: on") or _("Passcode: off"), function() S.pinMenu() end),
               btn(_("Connect Notion"), function() self:notionSetup(false) end) },
-            { btn(_("Sleep screen: my lock image"), function() S.useLockImage(false) end),
+            { btn(_("Sleep screen: book cover"), function() S.useBookCover(false) end),
               btn(_("Paper passphrase"), function() self:paperKeyDialog() end) },
             { btn(_("KOReader menu · all settings"), function()
                 local menu = self.ui and self.ui.menu
