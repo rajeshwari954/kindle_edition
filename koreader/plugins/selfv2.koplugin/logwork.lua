@@ -117,6 +117,79 @@ local function kindleToday()
     return out
 end
 
+---------------------------------------------------------------- calorie goals by where you are
+
+-- Your daily targets. "loc" is what's written to the check-in's Location.
+local GOALS = {
+    home1 = { name = "Home 1 · Mumbai", loc = "Mumbai", kcal = 1900, protein = 120, carbs = 200, fat = 65 },
+    home2 = { name = "Home 2 / travel", loc = "Home 2/travel", kcal = 1500, protein = 100, carbs = 140, fat = 60 },
+}
+ctx.GOALS = GOALS
+
+local function profileFromText(t)
+    t = (t or ""):lower()
+    if t == "" then return nil end
+    if t:find("mumbai") or t:find("home 1") or t:find("home1") then return "home1" end
+    return "home2"
+end
+
+-- the Wi-Fi network the Kindle is on (nil when offline or not on a Kindle)
+local function wifiName()
+    local ok, p = pcall(io.popen, "lipc-get-prop com.lab126.wifid currentEssid 2>/dev/null")
+    if not ok or not p then return nil end
+    local name = (p:read("*a") or ""):match("^%s*(.-)%s*$")
+    p:close()
+    return (name ~= "" and name) or nil
+end
+
+-- where you are today: the check-in's Location, else the Wi-Fi network you've linked, else your last choice
+function Canvas:goalProfile()
+    local ci = self.logd and self.logd.checkin
+    local fromCheckin = ci and profileFromText(N.get(ci, "Location"))
+    if fromCheckin then return fromCheckin, "check-in" end
+    local ssid = wifiName()
+    local known = G_reader_settings:readSetting("selfv2_wifi_place") or {}
+    if ssid and known[ssid] then return known[ssid], "Wi-Fi" end
+    return G_reader_settings:readSetting("selfv2_place") or "home1", nil
+end
+
+-- choose where you are: remembered, linked to this Wi-Fi network, and saved on today's check-in
+function Canvas:setPlace(key)
+    G_reader_settings:saveSetting("selfv2_place", key)
+    local ssid = wifiName()
+    if ssid then
+        local known = G_reader_settings:readSetting("selfv2_wifi_place") or {}
+        known[ssid] = key
+        G_reader_settings:saveSetting("selfv2_wifi_place", known)
+    end
+    local day = self:dday()
+    ctx.online(function()
+        self:checkinFor(day, function(ci)
+            if not ci then return end
+            local ok, res = N.update(ci.id, { Location = N.text(GOALS[key].loc) })
+            if ok and self.logd then self.logd.checkin = res end
+            self:rebuild("ui")
+        end)
+    end)
+    self:rebuild("ui")
+end
+
+function Canvas:placeMenu()
+    local ButtonDialog = require("ui/widget/buttondialog")
+    local cur = self:goalProfile()
+    local dlg
+    local function opt(key)
+        local g = GOALS[key]
+        return { { text = g.name .. string.format("  ·  %d kcal", g.kcal) .. (cur == key and "  ✓" or ""),
+            callback = function() UIManager:close(dlg); self:setPlace(key) end } }
+    end
+    dlg = ButtonDialog:new{
+        title = "Where are you today? Your calorie goal follows this. On Wi-Fi, the Kindle remembers this network for next time.",
+        buttons = { opt("home1"), opt("home2"), { { text = "Close", callback = function() UIManager:close(dlg) end } } },
+    }
+    UIManager:show(dlg)
+end
+
 ---------------------------------------------------------------- Log: data
 
 function Canvas:logFresh() return self.logd and self.logd.date == self:dday() and self.logd.loaded end
@@ -131,6 +204,8 @@ function Canvas:loadLog()
         d.food = res
         ok, res = N.query(N.DS.reading, { property = "Date", date = { equals = day } })
         if ok then d.reading = res end
+        ok, res = N.query(N.DS.checkin, { property = "Date", date = { equals = day } })
+        if ok then d.checkin = res[1] end
         d.loaded = true
         self.logd = d
         self:rebuild("full")
@@ -265,17 +340,24 @@ function Canvas:buildLog()
             ft = ft + (N.get(pg, "Fat (g)") or 0)
         end
         local fg = self.texfg
-        self:text("TODAY SO FAR", "sans", 12, P[1] + 16, P[2] + 14, fg, true)
-        self:text(tostring(math.floor(kcal)), "sans", 28, P[1] + 16, P[2] + 34, fg, true)
-        self:text("kcal · " .. #self.logd.food .. " meals", "sans", 14, P[1] + 16, P[2] + 70, fg)
+        local key = self:goalProfile()
+        local g = GOALS[key]
+        -- where you are (tap to change) and today against that goal
+        self:text("TODAY · " .. g.name:upper() .. "  ›", "sans", 12, P[1] + 16, P[2] + 12, fg, true)
+        self:zone({ P[1], P[2], 250, 34 }, function() self:placeMenu() end)
+        local w = self:text(tostring(math.floor(kcal)), "sans", 28, P[1] + 16, P[2] + 32, fg, true):getSize().w / px(100) * 100
+        self:text("/ " .. g.kcal .. " kcal", "sans", 14, P[1] + 22 + w, P[2] + 44, fg)
+        local left = g.kcal - kcal
+        self:text((left >= 0 and (math.floor(left) .. " left") or (math.floor(-left) .. " over")) .. " · " .. #self.logd.food
+            .. (#self.logd.food == 1 and " meal" or " meals"), "sans", 13, P[1] + 16, P[2] + 70, fg, left < 0)
         local mx = P[1] + 260
         local mw = (P[3] - 260 - 16 - 20) / 3
-        for i, m in ipairs({ { "Protein", pr, 100 }, { "Carbs", cb, 250 }, { "Fat", ft, 70 } }) do
+        for i, m in ipairs({ { "Protein", pr, g.protein }, { "Carbs", cb, g.carbs }, { "Fat", ft, g.fat } }) do
             local x = mx + (i - 1) * (mw + 10)
-            self:text(m[1], "sans", 12, x, P[2] + 30, fg, true)
-            self:text(math.floor(m[2]) .. " g", "sans", 12, x + mw - 40, P[2] + 30, fg, true)
-            self:box(x, P[2] + 52, mw, 6, ctx.TRACK, 3)
-            self:box(x, P[2] + 52, math.max(6, mw * math.min(1, m[2] / m[3])), 6, fg, 3)
+            self:text(m[1], "sans", 12, x, P[2] + 22, fg, true)
+            self:text(math.floor(m[2]) .. "/" .. m[3] .. " g", "sans", 11, x, P[2] + 40, fg)
+            self:box(x, P[2] + 62, mw, 6, ctx.TRACK, 3)
+            self:box(x, P[2] + 62, math.max(6, mw * math.min(1, m[2] / m[3])), 6, fg, 3)
         end
         local yy = P[2] + P[4] + 12
         self:choices(MEALS, d.meal or "Lunch", fx, yy, fw, 5, 42, function(v) d.meal = v end)

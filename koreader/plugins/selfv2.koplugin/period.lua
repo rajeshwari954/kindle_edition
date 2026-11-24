@@ -120,7 +120,14 @@ local function tally(d, upto)
             end
             t.hobby = t.hobby + (N.get(pg, "Hobby minutes") or 0)
             local kc = N.get(pg, "Total calories")
-            if kc and kc > 0 then t.kcalSum, t.kcalN = t.kcalSum + kc, t.kcalN + 1 end
+            if kc and kc > 0 then
+                t.kcalSum, t.kcalN = t.kcalSum + kc, t.kcalN + 1
+                -- that day's goal follows where you were (check-in Location; Mumbai unless it says otherwise)
+                local loc = (N.get(pg, "Location") or ""):lower()
+                local G = ctx.GOALS or {}
+                local goal = (loc ~= "" and not (loc:find("mumbai") or loc:find("home 1"))) and G.home2 or G.home1
+                t.goalSum = (t.goalSum or 0) + (goal and goal.kcal or 0)
+            end
             if N.get(pg, "Period day") then table.insert(t.period, day) end
         end
         day = N.nextDay(day)
@@ -507,7 +514,8 @@ function Canvas:buildStats()
         { "Reading", tostring(math.floor(t.pages)), "pages / min" },
         { "Speech", tostring(math.floor(t.talks)), "talks logged" },
         { "Hobbies", tostring(math.floor(t.hobby)), "minutes" },
-        { "Calories", t.kcalN > 0 and tostring(math.floor(t.kcalSum / t.kcalN + 0.5)) or "–", "kcal / day avg" },
+        { "Calories", t.kcalN > 0 and tostring(math.floor(t.kcalSum / t.kcalN + 0.5)) or "–",
+            (t.kcalN > 0 and (t.goalSum or 0) > 0) and ("avg · goal " .. math.floor(t.goalSum / t.kcalN + 0.5)) or "kcal / day avg" },
     }
     for i, r in ipairs(tiles(L.logs_y, L.log_h, 5, 8)) do
         self:text(logs[i][1], "sans", 13, r[1] + 12, r[2] + 12, GREY, true)
