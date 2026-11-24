@@ -454,11 +454,6 @@ function Canvas:rebuild(refresh)
         stats = "stats", focus = "focus", pin = "pin" })[self.mode] .. (self.night and "_night.png" or ".png")
     if not exists(plugin_dir .. "/screens/" .. bg) then bg = bg:gsub("_night", "") end
     local bgfile = plugin_dir .. "/screens/" .. bg
-    if self.mode == "pin" and S.lockImage then
-        -- the passcode keypad sits on your sleep screen image
-        local li = S.lockImage()
-        if li and exists(li) then bgfile = li end
-    end
     self:put(ImageWidget:new{ file = bgfile, width = Screen:getWidth(), height = Screen:getHeight(),
         file_do_cache = false, original_in_nightmode = true }, 0, 0)
     if self.mode == "home" then self:buildHome()

@@ -443,9 +443,9 @@ def bake_focus():
     im = Image.new("RGBA", (W, H))
     textured(im, (0, 0, W, H), "lace_s.jpg", 0.45, 0)
     save(im, "focus.png")
-    # the passcode keypad: the same lace, darker, so the keys stand out on e-ink
+    # the passcode keypad: your white and brown cow print, full screen
     im = Image.new("RGBA", (W, H))
-    textured(im, (0, 0, W, H), "lace_s.jpg", 0.28, 0)
+    textured(im, (0, 0, W, H), "browncow_s.jpg", 1.0, 0)
     save(im, "pin.png")
 
 
