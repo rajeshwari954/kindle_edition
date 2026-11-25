@@ -55,6 +55,17 @@ local function px(v) return math.floor(v * SX + 0.5) end
 local function py(v) return math.floor(v * SY + 0.5) end
 
 local plugin_dir
+
+local function localVersion()
+    local fh = io.open(plugin_dir .. "/version.txt", "r")
+    if not fh then return "0" end
+    local v = fh:read("*l") or "0"
+    fh:close()
+    return v
+end
+
+-- the version this running copy of KOReader actually loaded (the file can be newer after an update)
+local RUNNING_VERSION = nil
 local faces = {}
 local function face(kind, size)
     local key = kind .. size
@@ -973,6 +984,7 @@ local SelfV2 = WidgetContainer:extend{
 function SelfV2:init()
     plugin_dir = self.path
     self.layout = dofile(self.path .. "/layout.lua")
+    RUNNING_VERSION = RUNNING_VERSION or localVersion()
     N = N or dofile(self.path .. "/notion.lua")
     S = S or dofile(self.path .. "/settings.lua")
     S.pinPad = function(opts)
@@ -1229,13 +1241,6 @@ local function httpGet(url, sink)
     return code
 end
 
-local function localVersion()
-    local fh = io.open(plugin_dir .. "/version.txt", "r")
-    if not fh then return "0" end
-    local v = fh:read("*l") or "0"
-    fh:close()
-    return v
-end
 
 function SelfV2:checkUpdates()
     local base = G_reader_settings:readSetting("dailyreads_url") or ""
@@ -1254,7 +1259,16 @@ function SelfV2:checkUpdates()
             return
         end
         if remote == localVersion() then
-            UIManager:show(InfoMessage:new{ text = _("self.v2 is up to date."), timeout = 3 })
+            if RUNNING_VERSION and RUNNING_VERSION ~= remote then
+                -- already downloaded, but KOReader hasn't restarted since
+                if UIManager.askForRestart then
+                    UIManager:askForRestart(_("The latest self.v2 is downloaded. Restart KOReader to start using it."))
+                else
+                    UIManager:show(InfoMessage:new{ text = _("The latest self.v2 is downloaded. Close and reopen KOReader to use it.") })
+                end
+            else
+                UIManager:show(InfoMessage:new{ text = _("self.v2 is up to date."), timeout = 3 })
+            end
             return
         end
         local tmp = "/tmp/selfv2-update.tar.gz"
