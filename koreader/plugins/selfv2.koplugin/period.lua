@@ -310,22 +310,57 @@ function Canvas:buildWeek()
     local sw = self:measure(sp, "sans", 13, true) + 28
     self:pill(sp, H[1] + H[3] - 22 - sw, H[2] + 14, 32, "dark", 13, sw)
     local soFar = math.max(1, t.days)
+    local RH, STEP = 42, 47   -- row height and spacing (six rows: five habits and calories)
+    local cellX = function(c) return H[1] + H[3] - 32 - 7 * 22 + (c - 1) * 22 + 4 end
     for r, name in ipairs({ "Vit B12", "Vit D3", "Magnesium", "Herbal tea ×2", "Gym" }) do
-        local y = H[2] + 62 + (r - 1) * 56
-        self:box(H[1] + 16, y, H[3] - 32, 50, LIGHT, 14)
-        self:text(name, "sans", 17, H[1] + 32, y + 14, BLACK, true)
-        self:rtext((t.h[name] or 0) .. "/" .. soFar, "sans", 14, H[1] + H[3] - 32 - 7 * 22 - 12, y + 16, GREY)
+        local y = H[2] + 56 + (r - 1) * STEP
+        self:box(H[1] + 16, y, H[3] - 32, RH, LIGHT, 13)
+        self:text(name, "sans", 17, H[1] + 32, y + 10, BLACK, true)
+        self:rtext((t.h[name] or 0) .. "/" .. soFar, "sans", 14, H[1] + H[3] - 32 - 7 * 22 - 12, y + 12, GREY)
         local dday = from
         for c = 1, 7 do
-            local cx = H[1] + H[3] - 32 - 7 * 22 + (c - 1) * 22 + 4
+            local cx = cellX(c)
             local pg = d.checkin[dday]
             local done = pg and ((name == "Herbal tea ×2" and (N.get(pg, "Herbal tea") or 0) >= 2) or (name ~= "Herbal tea ×2" and N.get(pg, name)))
-            if dday > today then self:box(cx, y + 14, 18, 22, WHITE, 6)
-            elseif done then self:box(cx, y + 14, 18, 22, BLACK, 6)
-            else self:box(cx, y + 14, 18, 22, nil, 6, 2) end
+            if dday > today then self:box(cx, y + 10, 18, 22, WHITE, 6)
+            elseif done then self:box(cx, y + 10, 18, 22, BLACK, 6)
+            else self:box(cx, y + 10, 18, 22, nil, 6, 2) end
             dday = N.nextDay(dday)
         end
     end
+
+    -- calories against each day's goal (the goal follows where you were: Mumbai or Home 2/travel)
+    local y = H[2] + 56 + 5 * STEP
+    self:box(H[1] + 16, y, H[3] - 32, RH, LIGHT, 13)
+    self:text("Calories", "sans", 17, H[1] + 32, y + 10, BLACK, true)
+    local G = ctx.GOALS or {}
+    local sumK, sumG, n, hit = 0, 0, 0, 0
+    local dday = from
+    for c = 1, 7 do
+        local cx = cellX(c)
+        local pg = d.checkin[dday]
+        local loc = pg and (N.get(pg, "Location") or ""):lower() or ""
+        local goal = ((loc ~= "" and not (loc:find("mumbai") or loc:find("home 1"))) and G.home2 or G.home1)
+        goal = goal and goal.kcal or 1900
+        local kcal = pg and N.get(pg, "Total calories") or 0
+        local bh = 30
+        if dday > today then
+            self:box(cx, y + 6, 18, bh, WHITE, 5)
+        else
+            self:box(cx, y + 6, 18, bh, nil, 5, 2)
+            if kcal > 0 then
+                local f = math.min(1, kcal / goal)
+                local fh = math.max(4, math.floor(bh * f + 0.5))
+                self:box(cx, y + 6 + bh - fh, 18, fh, BLACK, 5)
+                if kcal > goal * 1.05 then self:box(cx + 3, y + 1, 12, 3, BLACK) end  -- over the goal
+                sumK, sumG, n = sumK + kcal, sumG + goal, n + 1
+                if kcal >= goal * 0.9 and kcal <= goal * 1.05 then hit = hit + 1 end
+            end
+        end
+        dday = N.nextDay(dday)
+    end
+    local label = n > 0 and string.format("avg %d / %d", math.floor(sumK / n + 0.5), math.floor(sumG / n + 0.5)) or "nothing logged"
+    self:rtext(label, "sans", 14, H[1] + H[3] - 32 - 7 * 22 - 12, y + 12, GREY)
 end
 
 ---------------------------------------------------------------- Month
