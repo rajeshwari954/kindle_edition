@@ -281,17 +281,23 @@ function Canvas:drawControl()
         end)
     end
 
-    -- rotate, restart, blackhole
-    local by, bw = 630, (698 - 24) / 3
+    -- settings, rotate, restart, blackhole
+    local by, bw = 630, (698 - 36) / 4
     local bx = function(i) return 30 + (i - 1) * (bw + 12) end
-    self:pill("Rotate", bx(1), by, 52, "outline", 17, bw)
-    self:zone({ bx(1), by, bw, 52 }, function() self:rotateMenu() end)
-    self:pill("Restart", bx(2), by, 52, "outline", 17, bw)
-    self:zone({ bx(2), by, bw, 52 }, function()
+    self:pill("Settings", bx(1), by, 52, "outline", 17, bw)
+    self:zone({ bx(1), by, bw, 52 }, function()
+        local plugin = self.plugin
+        self:leaveControl()
+        plugin:settingsDialog(not self.overlay and self or nil)
+    end)
+    self:pill("Rotate", bx(2), by, 52, "outline", 17, bw)
+    self:zone({ bx(2), by, bw, 52 }, function() self:rotateMenu() end)
+    self:pill("Restart", bx(3), by, 52, "outline", 17, bw)
+    self:zone({ bx(3), by, bw, 52 }, function()
         if UIManager.restartKOReader then UIManager:restartKOReader() end
     end)
-    self:pill("Blackhole", bx(3), by, 52, "dark", 17, bw)
-    self:zone({ bx(3), by, bw, 52 }, function()
+    self:pill("Blackhole", bx(4), by, 52, "dark", 17, bw)
+    self:zone({ bx(4), by, bw, 52 }, function()
         UIManager:show(ConfirmBox:new{
             text = _("Blackhole: close KOReader and go back to the Kindle's own home screen?"),
             ok_text = _("Exit"),

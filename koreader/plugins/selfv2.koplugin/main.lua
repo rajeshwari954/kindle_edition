@@ -1345,12 +1345,17 @@ function SelfV2:settingsDialog(canvas)
                 local menu = self.ui and self.ui.menu
                 if menu and menu.onShowMenu then menu:onShowMenu() end
             end) },
-            { btn(_("Open files"), function() canvas:close() end),
+            { btn(_("Open files"), function()
+                if canvas then canvas:close()
+                elseif self.ui and self.ui.document and self.ui.onClose then self.ui:onClose() end
+            end),
               btn(_("Check for updates"), function() self:checkUpdates() end) },
             { btn(G_reader_settings:nilOrTrue("selfv2_home_after_book") and _("Home after a book: on") or _("Home after a book: off"),
                 function() G_reader_settings:flipNilOrTrue("selfv2_home_after_book") end),
               btn(_("Restart KOReader"), function() if UIManager.restartKOReader then UIManager:restartKOReader() end end) },
-            { btn(_("Control centre"), function() canvas:openControl() end),
+            { btn(_("Control centre"), function()
+                if canvas then canvas:openControl() else self:openReaderControl() end
+            end),
               btn(_("Blackhole"), function()
                 local ConfirmBox = require("ui/widget/confirmbox")
                 UIManager:show(ConfirmBox:new{ text = _("Blackhole: close KOReader and go back to the Kindle's own home screen?"),
