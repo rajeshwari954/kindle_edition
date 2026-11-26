@@ -162,6 +162,10 @@ L = {
         "switch": (PAD, 16, 400, 44), "home": (632, 16, 96, 40), "nav": (PAD, 150, 698, 56), "tab_y": 155, "tab_h": 46,
         "goals_y": 218, "goal_h": 106, "habits": (PAD, 336, 698, 296), "logs_y": 646, "log_h": 86, "money": (PAD, 746, 698, 258),
     },
+    "meals": {
+        "switch": (PAD, 16, 400, 44), "home": (632, 16, 96, 40), "nav": (PAD, 150, 698, 56), "tab_y": 155, "tab_h": 46,
+        "sum": (PAD, 218, 698, 124), "cal": (PAD, 354, 698, 250), "mac": (PAD, 616, 698, 196), "day": (PAD, 824, 698, 180),
+    },
     "focus": {"back": (PAD, 24, 120, 44), "grid": (PAD, 220, 698, 740), "foot_y": 978},
     "subs": {
         "back": (PAD, 20, 116, 40), "sub": (PAD, 128),
@@ -439,6 +443,14 @@ def bake_stats():
     save(im, "stats.png")
 
 
+def bake_meals():
+    im = page(); l = L["meals"]
+    nav_bar(im, l["nav"])
+    textured(im, l["sum"], "leopard_s.jpg", 0.55, 26)
+    card(im, l["cal"]); card(im, l["mac"]); card(im, l["day"])
+    save(im, "meals.png")
+
+
 def bake_focus():
     im = Image.new("RGBA", (W, H))
     textured(im, (0, 0, W, H), "lace_s.jpg", 0.45, 0)
@@ -474,6 +486,7 @@ if __name__ == "__main__":
         bake_week()
         bake_month()
         bake_stats()
+        bake_meals()
         bake_focus()
     NIGHT = False
     write_layout()

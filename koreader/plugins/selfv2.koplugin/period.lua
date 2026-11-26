@@ -53,8 +53,9 @@ end
 
 function Canvas:periodKey(mode)
     local from, to
-    if mode == "week" then from, to = weekRange(self:dday()) else from, to = monthRange(self:dday()) end
-    return from, to, (mode == "week" and "w" or "m") .. from
+    local weekly = mode == "week" or mode == "meals"
+    if weekly then from, to = weekRange(self:dday()) else from, to = monthRange(self:dday()) end
+    return from, to, (weekly and "w" or "m") .. from
 end
 
 function Canvas:periodFresh(mode)
@@ -80,6 +81,10 @@ function Canvas:loadPeriod(mode)
         if ok then d.lectures = res end
         ok, res = N.between(N.DS.expenses, "Date", from, to)
         if ok then d.expenses = res end
+        if mode == "week" or mode == "meals" then
+            ok, res = N.between(N.DS.food, "Date", from, to)
+            if ok then d.food = res end
+        end
         if mode ~= "week" then
             ok, res = N.between(N.DS.work, "Deadline", from, to)
             if ok then d.work = res end
@@ -164,6 +169,7 @@ function Canvas:periodSwitch(active, L)
             .. "–" .. short(_t)) or "Week" },
         { "month", active == "month" and ("Month · " .. MONTHS[m]:sub(1, 3)) or "Month" },
         { "stats", active == "stats" and (MONTHS[m]:sub(1, 3) .. " stats") or "Stats" },
+        { "meals", "Meals" },
     }
     local widths, total = {}, 8
     for i, t in ipairs(tabs) do widths[i] = self:measure(t[2], "sans", 15, true) + 32 total = total + widths[i] + 4 end
@@ -361,6 +367,165 @@ function Canvas:buildWeek()
     end
     local label = n > 0 and string.format("avg %d / %d", math.floor(sumK / n + 0.5), math.floor(sumG / n + 0.5)) or "nothing logged"
     self:rtext(label, "sans", 14, H[1] + H[3] - 32 - 7 * 22 - 12, y + 12, GREY)
+    self:zone({ H[1] + 16, y, H[3] - 32, RH }, function() self:go("meals") end)
+end
+
+---------------------------------------------------------------- Meals (week of food and macros)
+
+local MEAL_ORDER = { Breakfast = 1, Brunch = 2, Lunch = 3, Snack = 4, Dinner = 5 }
+
+local function goalFor(pg)
+    local G = ctx.GOALS or {}
+    local loc = pg and (N.get(pg, "Location") or ""):lower() or ""
+    local g = ((loc ~= "" and not (loc:find("mumbai") or loc:find("home 1"))) and G.home2 or G.home1)
+    return g or { name = "Goal", kcal = 1900, protein = 120, carbs = 200, fat = 65 }
+end
+
+function Canvas:buildMeals()
+    local L = self.L.meals
+    self:periodSwitch("meals", L)
+    local from, to, key = self:periodKey("meals")
+    self:text("Meals this week", "serif", 40, 30, 66)
+    self:text(short(from) .. " – " .. short(to) .. " · tap a day to see what you ate", "sans", 16, 30, 116, GREY)
+    local d = self.periodd and self.periodd[key]
+    if not d then self:periodLoading(L.sum[2] + 24) return end
+    local today = N.today()
+
+    -- per-day totals and goals
+    local days = {}
+    local day = from
+    for i = 1, 7 do
+        days[i] = { date = day, kcal = 0, protein = 0, carbs = 0, fat = 0, meals = {}, goal = goalFor(d.checkin[day]) }
+        day = N.nextDay(day)
+    end
+    local index = {}
+    for i, x in ipairs(days) do index[x.date] = i end
+    for _i, pg in ipairs(d.food or {}) do
+        local x = days[index[dayOf(pg) or ""] or 0]
+        if x then
+            x.kcal = x.kcal + (N.get(pg, "Calories") or 0)
+            x.protein = x.protein + (N.get(pg, "Protein (g)") or 0)
+            x.carbs = x.carbs + (N.get(pg, "Carbs (g)") or 0)
+            x.fat = x.fat + (N.get(pg, "Fat (g)") or 0)
+            table.insert(x.meals, pg)
+        end
+    end
+    local logged = {}
+    for _i, x in ipairs(days) do if x.kcal > 0 then table.insert(logged, x) end end
+    local function avg(field, goal)
+        if #logged == 0 then return 0, 0 end
+        local a, g = 0, 0
+        for _i, x in ipairs(logged) do a = a + x[field]; g = g + (goal and x.goal[field] or 0) end
+        return a / #logged, g / #logged
+    end
+
+    -- summary (on leopard)
+    local S = L.sum
+    local fg = self.texfg
+    local ak, ag = avg("kcal", true)
+    local onTarget = 0
+    for _i, x in ipairs(logged) do if x.kcal >= x.goal.kcal * 0.9 and x.kcal <= x.goal.kcal * 1.05 then onTarget = onTarget + 1 end end
+    self:text("DAILY AVERAGE · " .. #logged .. (#logged == 1 and " DAY" or " DAYS") .. " LOGGED", "sans", 12, S[1] + 18, S[2] + 14, fg, true)
+    if #logged == 0 then
+        self:lines("Nothing logged this week yet. Add meals in Log → Food.", "sans", 17, S[1] + 18, S[2] + 48, 330, 2, fg, 24)
+    else
+        local w = self:text(tostring(math.floor(ak + 0.5)), "sans", 30, S[1] + 18, S[2] + 34, fg, true):getSize().w / px(100) * 100
+        self:text("/ " .. math.floor(ag + 0.5) .. " kcal", "sans", 14, S[1] + 24 + w, S[2] + 48, fg)
+        self:text(onTarget .. " of " .. #logged .. " days on target", "sans", 13, S[1] + 18, S[2] + 84, fg)
+    end
+    local mx = S[1] + 330
+    local mw = (S[3] - 330 - 18 - 20) / 3
+    for i, m in ipairs({ { "Protein", "protein" }, { "Carbs", "carbs" }, { "Fat", "fat" } }) do
+        local x = mx + (i - 1) * (mw + 10)
+        local a, g = avg(m[2], true)
+        self:text(m[1], "sans", 12, x, S[2] + 34, fg, true)
+        self:text(math.floor(a + 0.5) .. "/" .. math.floor(g + 0.5) .. " g", "sans", 12, x, S[2] + 52, fg)
+        self:box(x, S[2] + 76, mw, 6, ctx.TRACK, 3)
+        if g > 0 then self:box(x, S[2] + 76, math.max(6, mw * math.min(1, a / g)), 6, fg, 3) end
+    end
+
+    -- calories by day
+    local C = L.cal
+    self:text("Calories by day", "serif", 21, C[1] + 22, C[2] + 14)
+    self:rtext("Line = that day's goal", "sans", 13, C[1] + C[3] - 22, C[2] + 20, GREY)
+    self.mealsDay = self.mealsDay or ((today >= from and today <= to) and index[today] or 1)
+    local top, bh = C[2] + 62, 130
+    local maxv = 0
+    for _i, x in ipairs(days) do maxv = math.max(maxv, x.kcal, x.goal.kcal) end
+    maxv = maxv * 1.08
+    local colw = (C[3] - 44) / 7
+    for i, x in ipairs(days) do
+        local cx = C[1] + 22 + (i - 1) * colw
+        local bw = colw - 30
+        local bx = cx + 15
+        local sel = i == self.mealsDay
+        if sel then self:box(cx + 4, top - 8, colw - 8, bh + 66, LIGHT, 14) end
+        local gy = top + bh - bh * x.goal.kcal / maxv
+        if x.date <= today then
+            local h = math.floor(bh * x.kcal / maxv + 0.5)
+            if x.kcal > 0 then self:box(bx, top + bh - h, bw, h, x.kcal > x.goal.kcal * 1.05 and BLACK or GREY, 6) end
+        end
+        self:box(bx - 6, gy, bw + 12, 2, BLACK)
+        self:centerText(DOW[i]:sub(1, 1) .. DOW[i]:sub(2):lower(), "sans", 13, cx, top + bh + 6, colw, 20, BLACK, true)
+        self:centerText(x.kcal > 0 and tostring(math.floor(x.kcal)) or (x.date > today and "" or "–"), "sans", 12, cx, top + bh + 26, colw, 18, GREY)
+        self:zone({ cx, top - 10, colw, bh + 70 }, function() self.mealsDay = i; self:rebuild("ui") end)
+    end
+
+    -- macros by day
+    local M = L.mac
+    self:text("Macros by day", "serif", 21, M[1] + 22, M[2] + 14)
+    self:rtext("Filled = share of the day's target", "sans", 13, M[1] + M[3] - 22, M[2] + 20, GREY)
+    for r, m in ipairs({ { "Protein", "protein" }, { "Carbs", "carbs" }, { "Fat", "fat" } }) do
+        local y = M[2] + 56 + (r - 1) * 44
+        local a, g = avg(m[2], true)
+        self:text(m[1], "sans", 15, M[1] + 22, y + 8, BLACK, true)
+        self:text(#logged > 0 and (math.floor(a + 0.5) .. "/" .. math.floor(g + 0.5) .. " g avg") or "–", "sans", 12, M[1] + 22, y + 28, GREY)
+        local mcol = (M[3] - 44 - 140) / 7
+        for i, x in ipairs(days) do
+            local cx = M[1] + 22 + 140 + (i - 1) * mcol
+            local bx, bw = cx + 6, mcol - 12
+            if x.date > today then
+                self:box(bx, y + 10, bw, 22, WHITE, 6, 1, LIGHT)
+            else
+                self:box(bx, y + 10, bw, 22, nil, 6, 2)
+                local tgt = x.goal[m[2]] or 1
+                if x[m[2]] > 0 then
+                    local f = math.min(1, x[m[2]] / tgt)
+                    self:box(bx, y + 10, math.max(6, bw * f), 22, x[m[2]] > tgt * 1.1 and BLACK or GREY, 6)
+                end
+            end
+        end
+    end
+
+    -- the selected day's meals
+    local D = L.day
+    local x = days[self.mealsDay]
+    local dname = os.date("%A %d %b", N.dateTime(x.date)):gsub(" 0", " ")
+    self:text(dname, "serif", 21, D[1] + 22, D[2] + 14)
+    self:rtext(x.goal.name, "sans", 13, D[1] + D[3] - 22, D[2] + 20, GREY)
+    table.sort(x.meals, function(a, b)
+        return (MEAL_ORDER[N.get(a, "Meal") or ""] or 9) < (MEAL_ORDER[N.get(b, "Meal") or ""] or 9)
+    end)
+    if #x.meals == 0 then
+        self:lines(x.date > today and "Still to come." or "Nothing logged this day.", "sans", 16, D[1] + 22, D[2] + 64, 640, 1, GREY)
+    end
+    for k, pg in ipairs(x.meals) do
+        if k > 4 then
+            self:rtext("+ " .. (#x.meals - 4) .. " more", "sans", 13, D[1] + D[3] - 22, D[2] + D[4] - 24, GREY, true)
+            break
+        end
+        local y = D[2] + 50 + (k - 1) * 26
+        self:text(N.get(pg, "Meal") or "Meal", "sans", 14, D[1] + 22, y, BLACK, true)
+        self:lines(N.get(pg, "Item") or "", "sans", 14, D[1] + 126, y, 300, 1, BLACK)
+        local mac = string.format("%dP %dC %dF", math.floor(N.get(pg, "Protein (g)") or 0), math.floor(N.get(pg, "Carbs (g)") or 0),
+            math.floor(N.get(pg, "Fat (g)") or 0))
+        self:rtext(math.floor(N.get(pg, "Calories") or 0) .. " kcal", "sans", 14, D[1] + D[3] - 22, y, BLACK, true)
+        self:rtext(mac, "sans", 12, D[1] + D[3] - 120, y + 2, GREY)
+    end
+    if #x.meals > 0 then
+        self:text(string.format("Total %d / %d kcal · %d / %d g protein", math.floor(x.kcal), x.goal.kcal, math.floor(x.protein), x.goal.protein),
+            "sans", 13, D[1] + 22, D[2] + D[4] - 24, GREY, true)
+    end
 end
 
 ---------------------------------------------------------------- Month

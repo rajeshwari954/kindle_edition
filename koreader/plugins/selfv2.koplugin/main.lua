@@ -462,7 +462,7 @@ function Canvas:rebuild(refresh)
     end
     local bg = ({ home = "home", papers = "papers", subs = "substacks", library = "library",
         today = "today", checkin = "checkin", log = "log", work = "work", week = "week", month = "month",
-        stats = "stats", focus = "focus", pin = "pin" })[self.mode] .. (self.night and "_night.png" or ".png")
+        stats = "stats", meals = "meals", focus = "focus", pin = "pin" })[self.mode] .. (self.night and "_night.png" or ".png")
     if not exists(plugin_dir .. "/screens/" .. bg) then bg = bg:gsub("_night", "") end
     local bgfile = plugin_dir .. "/screens/" .. bg
     self:put(ImageWidget:new{ file = bgfile, width = Screen:getWidth(), height = Screen:getHeight(),
@@ -477,6 +477,7 @@ function Canvas:rebuild(refresh)
     elseif self.mode == "week" then self:buildWeek()
     elseif self.mode == "month" then self:buildMonth()
     elseif self.mode == "stats" then self:buildStats()
+    elseif self.mode == "meals" then self:buildMeals()
     elseif self.mode == "focus" then self:buildFocus()
     elseif self.mode == "pin" then self:buildPin()
     else self:buildSubs() end
@@ -502,7 +503,7 @@ function Canvas:go(mode)
     if mode == "log" then
         if self:logFresh() then self:syncReading() else self:loadLog() end
     elseif mode == "work" and not self:workFresh() then self:loadWork()
-    elseif (mode == "week" or mode == "month" or mode == "stats") and self.loadPeriod then self:loadPeriod(mode)
+    elseif (mode == "week" or mode == "month" or mode == "stats" or mode == "meals") and self.loadPeriod then self:loadPeriod(mode)
     elseif mode == "focus" and self.loadFocus then self:loadFocus() end
 end
 
