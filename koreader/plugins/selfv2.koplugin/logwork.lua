@@ -287,6 +287,7 @@ function Canvas:buildLog()
     local L = self.L.log
     self:datePill(L.date[1], L.date[2], L.date[3], L.date[4])
     self:homePill(L.home)
+    self:refreshPill(524, L.home[2], 100, L.home[4])
     self:navBar("log", L)
     self.logk = self.logk or "Food"
     self.ldraft = self.ldraft or {}
@@ -530,6 +531,7 @@ function Canvas:buildWork()
     local L = self.L.work
     self:datePill(L.date[1], L.date[2], L.date[3], L.date[4])
     self:homePill(L.home)
+    self:refreshPill(524, L.home[2], 100, L.home[4])
     self:navBar("work", L)
     if not self:workFresh() then
         self:lines("Loading from Notion…", "sans", 17, 52, L.cards_y + 20, 600, 1, GREY)

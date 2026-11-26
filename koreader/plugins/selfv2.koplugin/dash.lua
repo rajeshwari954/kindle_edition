@@ -253,6 +253,7 @@ function Canvas:buildToday()
     self:zone(L.focus, function() self:go("focus") end)
     self:datePill(L.date[1], L.date[2], L.date[3], L.date[4])
     self:homePill(L.home)
+    self:refreshPill(L.date[1], L.date[2] + L.date[4] + 6, L.date[3], 30)
     self:navBar("today", L)
     if not self:dashFresh() then
         self:lines("Loading from Notion…", "sans", 17, 52, L.grid_top + 20, 340, 1, GREY)
@@ -665,6 +666,7 @@ function Canvas:buildCheckin()
     local L = self.L.checkin
     self:datePill(L.date[1], L.date[2], L.date[3], L.date[4])
     self:homePill(L.home)
+    self:refreshPill(524, L.home[2], 100, L.home[4])
     self:navBar("checkin", L)
     if not self:dashFresh() then
         self:lines("Loading from Notion…", "sans", 17, 52, L.supp[2] + 60, 600, 1, GREY)

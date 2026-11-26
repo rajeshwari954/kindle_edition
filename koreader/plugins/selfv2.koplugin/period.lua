@@ -181,6 +181,7 @@ function Canvas:periodSwitch(active, L)
         x = x + widths[i] + 4
     end
     self:homePill(L.home)
+    self:refreshPill(524, L.home[2], 100, L.home[4])
     self:navBar("week", L)
 end
 

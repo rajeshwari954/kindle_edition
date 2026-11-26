@@ -344,6 +344,21 @@ function Canvas:pinClose()
     UIManager:close(self, "full")
 end
 
+-- Refresh: forget what this screen loaded and fetch it again from Notion
+function Canvas:refreshData()
+    if self.mode == "today" or self.mode == "checkin" then self.dash = nil
+    elseif self.mode == "log" then self.logd = nil
+    elseif self.mode == "work" then self.workd = nil
+    elseif self.mode == "week" or self.mode == "month" or self.mode == "stats" or self.mode == "meals" then self.periodd = nil
+    elseif self.mode == "focus" then self.focusSynced = nil end
+    self:go(self.mode)
+end
+
+function Canvas:refreshPill(x, y, w, h)
+    self:pill("Refresh", x, y, h, "outline", 15, w)
+    self:zone({ x - 4, y - 6, w + 8, h + 12 }, function() self:refreshData() end)
+end
+
 -- width of a string in design units (for right-aligned text)
 function Canvas:measure(str, kind, size, bold)
     return TextWidget:new{ text = str, face = face(kind, size), bold = bold }:getSize().w / SX
